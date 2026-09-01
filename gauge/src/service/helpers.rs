@@ -124,6 +124,16 @@ pub async fn groups_named(name: &str, v: &Valence) -> anyhow::Result<Vec<Permiss
         .map_err(|e| anyhow::anyhow!("query permission_group by name: {e}"))
 }
 
+/// `false` when ownership marks the row `pending_deletion` (noop deletion dispatcher).
+async fn record_is_live(table: &str, id: &str, v: &Valence) -> anyhow::Result<bool> {
+    let bare = valence::ownership::normalize_record_id_for_ownership(id);
+    match valence::ownership::OwnershipService::pending_deletion_gate(table, &bare, v).await {
+        Ok(()) => Ok(true),
+        Err(valence::Error::PendingDeletion(_)) => Ok(false),
+        Err(e) => Err(anyhow::anyhow!("ownership gate for {table}:{id}: {e}")),
+    }
+}
+
 pub async fn get_permission_raw(id: &str, v: &Valence) -> anyhow::Result<Option<Permission>> {
     let backend = v
         .backend_for_table("permission")
@@ -134,9 +144,14 @@ pub async fn get_permission_raw(id: &str, v: &Valence) -> anyhow::Result<Option<
         .map_err(|e| anyhow::anyhow!("read permission: {e}"))?
     {
         None => Ok(None),
-        Some(row) => Ok(Some(
-            serde_json::from_value(row).map_err(|e| anyhow::anyhow!("decode permission: {e}"))?,
-        )),
+        Some(row) => {
+            if !record_is_live("permission", id, v).await? {
+                return Ok(None);
+            }
+            Ok(Some(
+                serde_json::from_value(row).map_err(|e| anyhow::anyhow!("decode permission: {e}"))?,
+            ))
+        }
     }
 }
 
@@ -151,6 +166,9 @@ pub async fn get_group_raw(id: &str, v: &Valence) -> anyhow::Result<Option<Permi
     {
         None => Ok(None),
         Some(row) => {
+            if !record_is_live("permission_group", id, v).await? {
+                return Ok(None);
+            }
             Ok(Some(serde_json::from_value(row).map_err(|e| {
                 anyhow::anyhow!("decode permission_group: {e}")
             })?))
@@ -187,6 +205,9 @@ pub async fn get_domain_raw(id: &str, v: &Valence) -> anyhow::Result<Option<Perm
     {
         None => Ok(None),
         Some(row) => {
+            if !record_is_live("permission_domain", id, v).await? {
+                return Ok(None);
+            }
             Ok(Some(serde_json::from_value(row).map_err(|e| {
                 anyhow::anyhow!("decode permission_domain: {e}")
             })?))
