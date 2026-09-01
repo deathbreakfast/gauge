@@ -1,0 +1,162 @@
+[package]
+name = "gauge"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Permission domain: Valence schemas, actor_can/user_can, grant/revoke, and request/review"
+
+[lints]
+workspace = true
+
+[dependencies]
+leptos = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+uuid = { workspace = true }
+log = { workspace = true }
+uf-product-macros = { workspace = true }
+inventory = { workspace = true }
+spectra = { workspace = true, optional = true }
+spectra-core = { workspace = true, optional = true }
+photon = { workspace = true, optional = true, default-features = false, features = ["runtime"] }
+photon-macros = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt"] }
+
+valence = { workspace = true, optional = true }
+record-history = { workspace = true, optional = true }
+uf-search-core = { workspace = true, default-features = false }
+lepton = { workspace = true, optional = true }
+quark = { workspace = true, optional = true }
+chronon-coordinator = { workspace = true, optional = true }
+chronon-coordinator-macros = { workspace = true, optional = true }
+chronon-core = { workspace = true, optional = true }
+chronon-executor = { workspace = true, optional = true }
+chronon-valence-identity = { workspace = true, optional = true }
+higgs = { workspace = true, optional = true }
+higgs-host = { workspace = true, optional = true }
+uf-notifications-core = { workspace = true, optional = true }
+
+[build-dependencies]
+valence-codegen = { workspace = true }
+
+[features]
+default = []
+db-sqlite = ["valence/sqlite"]
+db-hybrid = ["valence/hybrid"]
+ssr = [
+    "leptos/ssr",
+    "dep:async-trait",
+    "dep:chrono",
+    "dep:spectra-core",
+    "dep:spectra",
+    "dep:valence",
+    "dep:record-history",
+    "record-history/ssr",
+    "dep:quark",
+    "dep:chronon-coordinator",
+    "dep:chronon-coordinator-macros",
+    "dep:chronon-core",
+    "dep:chronon-executor",
+    "dep:chronon-valence-identity",
+    "dep:higgs",
+    "higgs/ssr",
+    "dep:higgs-host",
+    "higgs-host/ssr",
+    "dep:uf-notifications-core",
+    "uf-notifications-core/ssr",
+    "dep:lepton",
+    "lepton/ssr",
+    "uf-search-core/ssr"]
+spectra-topics = [
+    "dep:spectra",
+    "dep:spectra-core",
+    "dep:photon",
+    "dep:photon-macros",
+    "dep:futures",
+    "dep:tokio",
+    "dep:chrono",
+]
+
+# Keep dev-deps featureless: a dev-dep enabling `lepton/ssr` turns on `leptos/ssr`
+# build-wide in featureless `--all-targets` runs, which makes `#[server]` macros emit
+# ssr bodies inside featureless crates (breaking gauge-app's featureless lib test).
+# Integration tests are `required-features = ["ssr"]` and reach `lepton` /
+# `uf-notifications-core` through this crate's own `ssr`-enabled optional deps.
+# record-history is intentionally NOT a dev-dep (same feature-unification poison).
+[dev-dependencies]
+tokio = { workspace = true }
+surrealdb = { workspace = true, default-features = false, features = ["kv-mem"] }
+
+[[test]]
+name = "workspace_members"
+
+[[test]]
+name = "product_surface"
+
+[[test]]
+name = "history_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "no_elevate_path_gate"
+required-features = ["ssr"]
+
+[[test]]
+name = "manifest_sync_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "permission_check_emission_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "permission_domain_contract"
+required-features = ["ssr"]
+
+[[test]]
+name = "permission_flows_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "permission_request_notifications_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "principal_connection_migration_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "privacy_authorization_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "privacy_policy_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "resource_permissions_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "search_registry_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "search_source_dispatch_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "super_user_scripts_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "trait_registry_smoke"
+required-features = ["ssr"]

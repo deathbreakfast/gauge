@@ -1,0 +1,111 @@
+# PR / merge gate aligned with docs/VERIFICATION.md.
+# Standalone checkout — UF deps resolve via git branch = main on unified-field-dev.
+# gauge-app / Orbital UI compile and Playwright stay in gauge-uf-app.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 1
+  CARGO_TARGET_DIR: target-gauge
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  RUST_BACKTRACE: 1
+  # Leptos workspace deps enable the `nightly` feature.
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin)
+        with:
+          # Pin: floating tip breaks diskann-wide (surrealdb-core) with E0283.
+          toolchain: nightly-2026-08-07
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt -p gauge -p embedded-gauge-host -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    # Clippy pedantic/nursery via `-- -D warnings`. Keep job RUSTFLAGS empty so
+    # dependency/manifest noise does not fail rustc before clippy runs.
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin)
+        with:
+          toolchain: nightly-2026-08-07
+          components: clippy
+      # Scoped targets only — VERIFICATION.md: do not use --all-targets on gauge.
+      - name: cargo clippy (gauge lib + contract suites)
+        run: |
+          cargo clippy -p gauge --features ssr --lib -- -D warnings
+          cargo clippy -p gauge --features ssr \
+            --test manifest_sync_integration \
+            --test permission_check_emission_integration \
+            --test permission_domain_contract \
+            --test permission_flows_integration \
+            --test privacy_authorization_integration \
+            --test privacy_policy_integration \
+            --test history_integration \
+            --test no_elevate_path_gate \
+            --test resource_permissions_integration \
+            --test permission_request_notifications_integration \
+            --test principal_connection_migration_integration \
+            --test super_user_scripts_integration \
+            --test search_source_dispatch_integration \
+            -- -D warnings
+      - name: cargo clippy (embedded-gauge-host)
+        run: cargo clippy -p embedded-gauge-host --all-targets -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin)
+        with:
+          toolchain: nightly-2026-08-07
+      - name: cargo test (workspace + product_surface needles)
+        run: cargo test -p gauge --test workspace_members --test product_surface
+      - name: cargo test (permission domain contracts)
+        run: >
+          cargo test -p gauge --features ssr
+          --test manifest_sync_integration
+          --test permission_check_emission_integration
+          --test permission_domain_contract
+          --test permission_flows_integration
+          --test privacy_authorization_integration
+          --test privacy_policy_integration
+          --test history_integration
+          --test no_elevate_path_gate
+          --test resource_permissions_integration
+          --test permission_request_notifications_integration
+          --test principal_connection_migration_integration
+          --test super_user_scripts_integration
+          --test search_source_dispatch_integration
+      - name: cargo check + run (embedded-gauge-host)
+        run: |
+          cargo check -p embedded-gauge-host
+          cargo run -p embedded-gauge-host
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (pin)
+        with:
+          toolchain: nightly-2026-08-07
+      - name: cargo doc (gauge, deny broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D rustdoc::broken-intra-doc-links"
+        run: cargo doc -p gauge --features ssr --no-deps

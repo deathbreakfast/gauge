@@ -1,0 +1,21 @@
+[package]
+name = "embedded-gauge-host"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Teaching host: Super User bootstrap + actor_can deny/allow + permission inventory contract"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, default-features = false, features = ["tokio", "http1", "json"] }
+chrono = { workspace = true }
+gauge = { path = "../../gauge", features = ["ssr"] }
+http-body-util = "0.1"
+lepton = { workspace = true, features = ["ssr"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+valence = { workspace = true }
