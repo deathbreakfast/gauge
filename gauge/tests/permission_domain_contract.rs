@@ -720,6 +720,14 @@ async fn owner_can_update_permission_happy_path() {
     service::delete_permission(&world.permission_id, &world.owner_ctx)
         .await
         .expect("owner delete_permission");
+
+    let listed = service::list_permissions(&world.owner_ctx, Some("RenamedPerm".to_string()))
+        .await
+        .expect("list after delete");
+    assert!(
+        listed.is_empty(),
+        "pending_deletion permissions must not appear in list, got {listed:?}"
+    );
 }
 
 #[tokio::test]
