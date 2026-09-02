@@ -149,7 +149,8 @@ pub async fn get_permission_raw(id: &str, v: &Valence) -> anyhow::Result<Option<
                 return Ok(None);
             }
             Ok(Some(
-                serde_json::from_value(row).map_err(|e| anyhow::anyhow!("decode permission: {e}"))?,
+                serde_json::from_value(row)
+                    .map_err(|e| anyhow::anyhow!("decode permission: {e}"))?,
             ))
         }
     }
