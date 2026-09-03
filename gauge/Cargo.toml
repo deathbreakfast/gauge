@@ -158,5 +158,9 @@ name = "super_user_scripts_integration"
 required-features = ["ssr"]
 
 [[test]]
+name = "super_user_group_guards"
+required-features = ["ssr"]
+
+[[test]]
 name = "trait_registry_smoke"
 required-features = ["ssr"]

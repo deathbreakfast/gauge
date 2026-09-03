@@ -75,9 +75,18 @@ Expected contract when a host mounts `PermissionRoutes` from gauge-uf-app:
 
 - **Session required** on every `gauge-app` server function (fail closed).
 - **`GaugeAdmin`** required on admin mutations and principal search (`#[uf_product_macros::server(permission = "GaugeAdmin")]`). Runtime deny without GaugeAdmin is covered by gauge-uf-app e2e (`e2e.perm.detail.save_no_admin`, `e2e.group.detail.save_no_admin`, `e2e.search.principals_no_admin`, and related `*_no_admin` scenarios).
+- **TOTP step-up (Tier A)** required on privilege-shaped mutations via
+  `#[uf_product_macros::server(..., step_up)]` (window) or `step_up = "fresh"`:
+  grant/revoke (`add_`/`remove_permission_*`), group membership and ownership,
+  nested groups, `decide_permission_request`, `delete_permission` / `delete_group`,
+  `update_permission`, and `create_permission`. Routine taxonomy (`create_domain`,
+  `create_group`, `update_group`) and request create stay session + GaugeAdmin /
+  owner only. Membership and ownership changes on `super_user_group` require a
+  fresh TOTP code on that call (window alone is not enough).
 - **Owner / Super User** enforced in Valence policies and mirrored in `gauge::service` for defense in depth.
-- **Super User** is pinned to well-known group id `super_user_group`; duplicate groups that reuse the display name do not grant privilege.
+- **Super User** is pinned to well-known group id `super_user_group`; duplicate groups that reuse the display name do not grant privilege. `delete_group` and nested-group membership on that well-known id are blocked in `gauge::service`.
 - **`create_permission`** requires the actor to own/control an explicitly supplied `owners_group_id` (default owner group is created when omitted).
 - **User-facing reads** (`list`/`get` for permissions, groups, domains) use session-scoped Valence. The grant graph (`allow_list` on permissions; owners and members on groups) is returned only to editors (owners-group maintainers and Super User). Every other authenticated reader gets an empty list — withheld, not "nobody holds this."
 - **Catalog enumeration (accepted residual):** any authenticated user can browse every permission and group by name, including resource-scoped rows such as `neutrino_secret.{id}.Reveal`. That browsability is the access-request surface. Revisit if a deployment ever serves more than one tenant.
 - **`search_principals`** clamps `max_results` (1..=50) and logs query length only (not the search string).
+- **History pagination:** `list_history` must page at the query layer; loading every `PermissionHistory` row and filtering in Rust is not acceptable.

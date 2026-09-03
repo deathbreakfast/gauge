@@ -119,6 +119,12 @@ pub async fn update_group(
 
 /// Delete a group (owner or super-user only).
 pub async fn delete_group(id: &str, v: &Valence) -> anyhow::Result<()> {
+    if id == SUPER_USER_GROUP_ID {
+        return Err(super::GaugeServiceError::validation(
+            "Cannot delete the well-known Super User group",
+        )
+        .into());
+    }
     let actor_user_id = require_user_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
@@ -311,6 +317,12 @@ pub async fn add_group_member_group(
     child_group_id: &str,
     v: &Valence,
 ) -> anyhow::Result<()> {
+    if group_id == SUPER_USER_GROUP_ID || child_group_id == SUPER_USER_GROUP_ID {
+        return Err(super::GaugeServiceError::validation(
+            "Cannot nest the well-known Super User group as a parent or child",
+        )
+        .into());
+    }
     let actor_user_id = require_user_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
@@ -355,6 +367,12 @@ pub async fn remove_group_member_group(
     child_group_id: &str,
     v: &Valence,
 ) -> anyhow::Result<()> {
+    if group_id == SUPER_USER_GROUP_ID || child_group_id == SUPER_USER_GROUP_ID {
+        return Err(super::GaugeServiceError::validation(
+            "Cannot nest the well-known Super User group as a parent or child",
+        )
+        .into());
+    }
     let actor_user_id = require_user_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
