@@ -218,6 +218,17 @@ behavioral coverage):
 - `layout_auth_gate_and_nav_happy_path` / `layout_drop_auth_guard_sad_path`
 - `admin_mutations_require_gauge_admin_happy_path` / `request_workflow_must_not_require_gauge_admin_sad_path`
 - `index_pages_testid_and_list_bindings_happy_path` / `request_detail_decide_binding_happy_path`
+- TM-11 step-up inventory (composer `server.rs` needles via `product_surface`):
+  `tier_a_mutations_require_step_up_window_happy_path`,
+  `create_domain_and_create_group_must_not_require_step_up_sad_path`,
+  `super_user_membership_requires_fresh_totp_happy_path`
+
+Focused TM-11 inventory:
+
+```bash
+cargo test -p gauge --test product_surface step_up -- --nocapture
+cargo test -p gauge --test product_surface membership -- --nocapture
+```
 
 Runtime GaugeAdmin deny (TM-SEC-09) is Layer 2 in gauge-uf-app-e2e:
 `e2e.perm.detail.save_no_admin`, `e2e.group.detail.save_no_admin`,

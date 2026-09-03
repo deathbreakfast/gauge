@@ -176,6 +176,105 @@ fn admin_mutations_require_gauge_admin_happy_path() {
     // principals_no_admin). Static attribute coverage above is not a substitute.
 }
 
+/// Attribute window immediately before `pub async fn {name}(`.
+///
+/// Require the opening `(` so `create_permission` does not match
+/// `create_permission_request`.
+fn server_fn_attr_window<'a>(server: &'a str, fn_name: &str) -> &'a str {
+    let needle = format!("pub async fn {fn_name}(");
+    let start = server
+        .find(&needle)
+        .unwrap_or_else(|| panic!("missing fn `{fn_name}`"));
+    &server[start.saturating_sub(220)..start]
+}
+
+#[test]
+fn tier_a_mutations_require_step_up_window_happy_path() {
+    let Some(server) = read_app("server.rs") else {
+        return;
+    };
+    // TM-11: window step-up on Tier A mutations (macro `step_up` → require_step_up("window")).
+    for fn_name in [
+        "create_permission",
+        "update_permission",
+        "delete_permission",
+        "delete_group",
+        "add_permission_user",
+        "remove_permission_user",
+        "add_permission_group",
+        "remove_permission_group",
+        "add_group_group",
+        "remove_group_group",
+        "decide_permission_request",
+    ] {
+        let window = server_fn_attr_window(&server, fn_name);
+        assert!(
+            window.contains("step_up"),
+            "`{fn_name}` must carry `step_up` (TM-11 window gate)"
+        );
+    }
+}
+
+#[test]
+fn create_domain_and_create_group_must_not_require_step_up_sad_path() {
+    let Some(server) = read_app("server.rs") else {
+        return;
+    };
+    // Domains/groups creation stay GaugeAdmin-only; step-up applies to Tier A mutations.
+    for fn_name in ["create_domain", "create_group"] {
+        let window = server_fn_attr_window(&server, fn_name);
+        assert!(
+            window.contains(r#"permission = "GaugeAdmin""#),
+            "`{fn_name}` must stay GaugeAdmin"
+        );
+        assert!(
+            !window.contains("step_up"),
+            "`{fn_name}` must not carry `step_up`"
+        );
+    }
+}
+
+#[test]
+fn super_user_membership_requires_fresh_totp_happy_path() {
+    let Some(server) = read_app("server.rs") else {
+        return;
+    };
+    assert!(
+        server.contains("fn require_group_membership_step_up"),
+        "membership helper must exist for Super User fresh TOTP"
+    );
+    assert!(
+        server.contains("verify_fresh_totp") && server.contains(r#"require_step_up("window")"#),
+        "membership helper must verify_fresh_totp for Super User and window otherwise"
+    );
+    for fn_name in [
+        "add_group_user",
+        "add_group_owner_user",
+        "remove_group_owner_user",
+        "remove_group_user",
+    ] {
+        let needle = format!("pub async fn {fn_name}(");
+        let start = server
+            .find(&needle)
+            .unwrap_or_else(|| panic!("missing fn `{fn_name}`"));
+        let body_end = (start + 700).min(server.len());
+        let body = &server[start..body_end];
+        assert!(
+            body.contains("totp_code"),
+            "`{fn_name}` must take `totp_code` for Super User fresh step-up"
+        );
+        assert!(
+            body.contains("require_group_membership_step_up"),
+            "`{fn_name}` must call require_group_membership_step_up"
+        );
+        let window = server_fn_attr_window(&server, fn_name);
+        assert!(
+            !window.contains("step_up"),
+            "`{fn_name}` uses helper step-up, not macro `step_up`"
+        );
+    }
+}
+
 #[test]
 fn request_workflow_must_not_require_gauge_admin_sad_path() {
     let Some(server) = read_app("server.rs") else {
