@@ -72,10 +72,6 @@ const fn elevate_allowlist() -> &'static [(&'static str, &'static str)] {
             "one-shot principal edge migration",
         ),
         (
-            "resource_permissions/revoke_umbrella_grants.rs",
-            "one-shot revoke of standing umbrella grant edges for a resource kind",
-        ),
-        (
             "super_user.rs",
             "Super User membership graph read under System (typed get re-enters privacy)",
         ),

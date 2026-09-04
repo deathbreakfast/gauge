@@ -907,6 +907,27 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
 }
 
 #[tokio::test]
+async fn revoke_umbrella_grants_rejects_non_system_sad() -> anyhow::Result<()> {
+    let system = system_valence().await;
+    seed_gluon_catalog(&system).await?;
+    seed_user("session_op", "session_op@example.test", &system).await;
+    let session = user_valence(&system, "session_op");
+    let groups = ResourceKind::NeutrinoSecret.descriptor().groups;
+    let err = gauge::resource_permissions::revoke_umbrella_grants(
+        &session,
+        ResourceKind::NeutrinoSecret,
+        &[groups.viewers],
+    )
+    .await
+    .expect_err("session actor must not elevate");
+    assert!(
+        err.to_string().contains("System"),
+        "expected System requirement, got {err}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()> {
     let system = system_valence().await;
     seed_gluon_catalog(&system).await?;
