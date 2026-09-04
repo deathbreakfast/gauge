@@ -46,7 +46,7 @@
 //! - **Privilege-shaped mutations** — Domain ops that change who can act
 //!   (grants, membership, ownership, nested groups, permission delete/update,
 //!   request decide). Product servers gate these with TOTP step-up; taxonomy
-//!   create for domains/groups stays session + GaugeAdmin only.
+//!   create for domains/groups stays session + `GaugeAdmin` only.
 //!   [Get started](#privilege-shaped-mutations)
 //!
 //! Domain CRUD and access checks return `anyhow::Result`; classifiable failures
@@ -519,7 +519,7 @@
 //! window (macro `step_up`) before the call proceeds. Membership and ownership
 //! changes on the well-known Super User group additionally need a fresh TOTP on
 //! that request. Routine taxonomy create (`create_domain`, `create_group`) and
-//! request create stay session + GaugeAdmin / owner only.
+//! request create stay session + `GaugeAdmin` / owner only.
 //!
 //! **Prerequisites:** `ssr`; authenticated Valence actor with the right grants;
 //! product step-up wiring when calling through gauge-app server functions.

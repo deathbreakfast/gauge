@@ -284,7 +284,8 @@ pub async fn list_history(
 ) -> anyhow::Result<Vec<HistoryEntryDto>> {
     let _actor_user_id = require_user_id(v)?;
     let lookup = v;
-    let mut query = PermissionHistory::query(lookup).order_by_changed_at(valence::SortDirection::Desc);
+    let mut query =
+        PermissionHistory::query(lookup).order_by_changed_at(valence::SortDirection::Desc);
     if let (Some(ref want_kind), Some(ref want_id)) = (&subject_kind, &subject_id) {
         if !want_kind.is_empty() && !want_id.is_empty() {
             query = query.where_source(valence::RecordPredicate::Equals(valence::RecordId::new(
@@ -293,6 +294,7 @@ pub async fn list_history(
             )));
         }
     }
+    #[allow(clippy::cast_possible_truncation)] // MAX_HISTORY_LIST_ROWS is 500
     let rows = query.limit(MAX_HISTORY_LIST_ROWS as u32).await?;
     let is_super = actor_is_super_user(v).await?;
     let mut out = Vec::with_capacity(rows.len().min(MAX_HISTORY_LIST_ROWS));
