@@ -85,8 +85,14 @@ Expected contract when a host mounts `PermissionRoutes` from gauge-uf-app:
   fresh TOTP code on that call (window alone is not enough).
 - **Owner / Super User** enforced in Valence policies and mirrored in `gauge::service` for defense in depth.
 - **Super User** is pinned to well-known group id `super_user_group`; duplicate groups that reuse the display name do not grant privilege. `delete_group` and nested-group membership on that well-known id are blocked in `gauge::service`.
+- **`actor_is_super_user` System rebind (allowlisted):** membership walks rebind to
+  System only for the well-known group graph read (`operation =
+  permission_actor_is_super_user`). That is a confined read so session actors can
+  evaluate Super User without opening group policies to every authenticated user.
+  Do not copy this pattern for step-up or vault material. Chronon
+  `sync_super_user_membership_roles` starts as System from the script context.
 - **`create_permission`** requires the actor to own/control an explicitly supplied `owners_group_id` (default owner group is created when omitted).
 - **User-facing reads** (`list`/`get` for permissions, groups, domains) use session-scoped Valence. The grant graph (`allow_list` on permissions; owners and members on groups) is returned only to editors (owners-group maintainers and Super User). Every other authenticated reader gets an empty list — withheld, not "nobody holds this."
 - **Catalog enumeration (accepted residual):** any authenticated user can browse every permission and group by name, including resource-scoped rows such as `neutrino_secret.{id}.Reveal`. That browsability is the access-request surface. Revisit if a deployment ever serves more than one tenant.
 - **`search_principals`** clamps `max_results` (1..=50) and logs query length only (not the search string).
-- **History pagination:** `list_history` must page at the query layer; loading every `PermissionHistory` row and filtering in Rust is not acceptable.
+- **History pagination:** `list_history` caps returned rows at `MAX_HISTORY_LIST_ROWS` (500) after ownership filtering, but still loads the full `PermissionHistory` query before filter. Prefer query-layer paging for large deployments.
