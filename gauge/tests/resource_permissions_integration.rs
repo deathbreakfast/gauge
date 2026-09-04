@@ -8,7 +8,7 @@ use common::{seed_user, test_valence};
 use gauge::resource_permissions::{
     delete_resource_permission_bundle, ensure_resource_permission_bundle, permission_name,
     seed_resource_kind_catalog, ResourceAction, ResourceKind, ResourcePermissionError,
-    ResourcePermissionSpec, UmbrellaPolicy, CREATE_GLUON_APPLICATIONS, GLUON_APP_RESOURCE,
+    ResourcePermissionPolicy, ResourcePermissionSpec, UmbrellaPolicy,
 };
 use gauge::service;
 use valence::{Actor, JsonActorContext, Model, PolicyEvaluator, PrivacyOperation};
@@ -101,7 +101,7 @@ async fn seed_resource_kind_catalog_gluon_idempotent_and_creator_holds_create() 
 
     let uv = user_valence(&system, creator);
     assert!(
-        service::actor_can(&uv, CREATE_GLUON_APPLICATIONS.permission_name).await?,
+        service::actor_can(&uv, ResourceKind::GluonApp.create_permission_name()).await?,
         "creator group member should hold CreateGluonApplications"
     );
 
@@ -109,7 +109,7 @@ async fn seed_resource_kind_catalog_gluon_idempotent_and_creator_holds_create() 
     seed_user(stranger, "stranger_u2@example.test", &system).await;
     let sv = user_valence(&system, stranger);
     assert!(
-        !service::actor_can(&sv, CREATE_GLUON_APPLICATIONS.permission_name).await?,
+        !service::actor_can(&sv, ResourceKind::GluonApp.create_permission_name()).await?,
         "non-member must not hold CreateGluonApplications"
     );
     Ok(())
@@ -318,12 +318,17 @@ async fn resource_policy_allows_view_when_granted() -> anyhow::Result<()> {
         user_id: viewer.to_string(),
     })?);
     let record = serde_json::json!({ "id": "pol-1" });
-    let allowed = GLUON_APP_RESOURCE
+    let gluon_app_resource = ResourcePermissionPolicy {
+        rule_name: "test::GLUON_APP_RESOURCE",
+        kind: ResourceKind::GluonApp,
+        id_field: "id",
+    };
+    let allowed = gluon_app_resource
         .evaluate(PrivacyOperation::Read, &record, &actor_ctx, &vv)
         .await?;
     assert!(allowed);
 
-    let denied = GLUON_APP_RESOURCE
+    let denied = gluon_app_resource
         .evaluate(PrivacyOperation::Update, &record, &actor_ctx, &vv)
         .await?;
     assert!(!denied, "viewer must not Edit");

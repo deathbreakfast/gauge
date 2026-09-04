@@ -12,7 +12,7 @@ use super::default_groups::grant_named_permission_to_group;
 use super::error::ResourcePermissionError;
 use super::kinds::{
     domain_id, normalize_id_fragment, owners_group_id, permission_name, permission_record_id,
-    ResourceAction, ResourceKind,
+    ResourceAction, ResourceKindDescriptor,
 };
 use super::spec::{ResourcePermissionBundle, ResourcePermissionSpec};
 
@@ -31,12 +31,12 @@ fn canonical_user_id(user_id: &str) -> String {
 }
 
 fn map_err(
-    kind: ResourceKind,
+    kind: &ResourceKindDescriptor,
     resource_id: &str,
     operation: &str,
     source: impl Into<anyhow::Error>,
 ) -> ResourcePermissionError {
-    ResourcePermissionError::service(kind.prefix(), resource_id, operation, source)
+    ResourcePermissionError::service(kind.prefix, resource_id, operation, source)
 }
 
 async fn ensure_user_principal(
@@ -122,7 +122,7 @@ async fn add_owner_user(
 
 async fn ensure_permission_row(
     system: &Valence,
-    kind: ResourceKind,
+    kind: &ResourceKindDescriptor,
     resource_id: &str,
     action: ResourceAction,
     domain_rid: &RecordId,
@@ -173,11 +173,11 @@ async fn ensure_permission_row(
     Ok(name)
 }
 
-fn umbrella_grants(kind: ResourceKind, action: ResourceAction) -> Vec<&'static str> {
-    if kind.umbrella_policy() == super::kinds::UmbrellaPolicy::None {
+fn umbrella_grants(kind: &ResourceKindDescriptor, action: ResourceAction) -> Vec<&'static str> {
+    if kind.umbrella == super::kinds::UmbrellaPolicy::None {
         return Vec::new();
     }
-    let g = kind.default_groups();
+    let g = kind.groups;
     match action {
         ResourceAction::View => {
             if g.editors == g.operators {
@@ -200,7 +200,7 @@ fn umbrella_grants(kind: ResourceKind, action: ResourceAction) -> Vec<&'static s
 
 async fn ensure_domain(
     system: &Valence,
-    kind: ResourceKind,
+    kind: &ResourceKindDescriptor,
     resource_id: &str,
     dom_id: &str,
     display: &str,
@@ -240,7 +240,7 @@ async fn ensure_domain(
 
 async fn ensure_owners_group(
     system: &Valence,
-    kind: ResourceKind,
+    kind: &ResourceKindDescriptor,
     resource_id: &str,
     own_id: &str,
     display: &str,
@@ -268,7 +268,7 @@ async fn ensure_owners_group(
 
 async fn grant_action_to_umbrellas(
     system: &Valence,
-    kind: ResourceKind,
+    kind: &ResourceKindDescriptor,
     resource_id: &str,
     action: ResourceAction,
     owners_group_id: &str,
@@ -305,21 +305,35 @@ async fn grant_action_to_umbrellas(
 ///
 /// Hosts should call [`super::seed_resource_kind_catalog`] (or product `create_initial_*`) before
 /// product create paths so umbrella groups exist to receive grants.
-pub async fn ensure_resource_permission_bundle(
+///
+/// `spec.kind` accepts a [`super::ResourceKind`] or a
+/// [`ResourceKindDescriptor`], so a product that owns a kind Gauge has no variant for
+/// passes its own descriptor here.
+pub async fn ensure_resource_permission_bundle<K>(
     v: &Valence,
-    spec: ResourcePermissionSpec,
-) -> Result<ResourcePermissionBundle, ResourcePermissionError> {
-    let kind = spec.kind;
-    let resource_id = spec.resource_id.trim().to_string();
+    spec: ResourcePermissionSpec<K>,
+) -> Result<ResourcePermissionBundle, ResourcePermissionError>
+where
+    K: Into<ResourceKindDescriptor>,
+{
+    let ResourcePermissionSpec {
+        kind,
+        resource_id,
+        display_name,
+        actions,
+        maintainer_actor,
+    } = spec;
+    let kind = kind.into();
+    let resource_id = resource_id.trim().to_string();
     if normalize_id_fragment(&resource_id).is_empty() {
         return Err(ResourcePermissionError::InvalidResourceId {
-            kind: kind.prefix().to_string(),
+            kind: kind.prefix.to_string(),
         });
     }
-    let maintainer = canonical_user_id(&spec.maintainer_actor);
+    let maintainer = canonical_user_id(&maintainer_actor);
     if maintainer.is_empty() {
         return Err(ResourcePermissionError::MissingMaintainer {
-            kind: kind.prefix().to_string(),
+            kind: kind.prefix.to_string(),
             resource_id: resource_id.clone(),
         });
     }
@@ -327,31 +341,30 @@ pub async fn ensure_resource_permission_bundle(
     let system = as_system(v, "ensure_resource_permission_bundle");
     let dom_id = domain_id(kind, &resource_id);
     let own_id = owners_group_id(kind, &resource_id);
-    let display = if spec.display_name.trim().is_empty() {
-        format!("{} {resource_id}", kind.display_label())
+    let display = if display_name.trim().is_empty() {
+        format!("{} {resource_id}", kind.display_label)
     } else {
-        spec.display_name.trim().to_string()
+        display_name.trim().to_string()
     };
-    let actions = if spec.actions.is_empty() {
+    let actions = if actions.is_empty() {
         kind.default_actions()
     } else {
-        spec.actions.clone()
+        actions
     };
 
     info!(
         "[permission] ensure_resource_permission_bundle start kind={} resource_id={}",
-        kind.prefix(),
-        resource_id
+        kind.prefix, resource_id
     );
 
-    let domain_rid = ensure_domain(&system, kind, &resource_id, &dom_id, &display).await?;
-    ensure_owners_group(&system, kind, &resource_id, &own_id, &display, &maintainer).await?;
+    let domain_rid = ensure_domain(&system, &kind, &resource_id, &dom_id, &display).await?;
+    ensure_owners_group(&system, &kind, &resource_id, &own_id, &display, &maintainer).await?;
 
     let mut permission_names = HashMap::new();
     for action in actions {
         let name = ensure_permission_row(
             &system,
-            kind,
+            &kind,
             &resource_id,
             action,
             &domain_rid,
@@ -359,14 +372,13 @@ pub async fn ensure_resource_permission_bundle(
             &display,
         )
         .await?;
-        grant_action_to_umbrellas(&system, kind, &resource_id, action, &own_id, &name).await?;
+        grant_action_to_umbrellas(&system, &kind, &resource_id, action, &own_id, &name).await?;
         permission_names.insert(action.as_str().to_string(), name);
     }
 
     info!(
         "[permission] ensure_resource_permission_bundle ok kind={} resource_id={}",
-        kind.prefix(),
-        resource_id
+        kind.prefix, resource_id
     );
 
     Ok(ResourcePermissionBundle {
@@ -404,7 +416,7 @@ async fn delete_entity_now(
     table: &str,
     id: &str,
     system: &Valence,
-    kind: ResourceKind,
+    kind: &ResourceKindDescriptor,
     resource_id: &str,
     operation: &str,
 ) -> Result<(), ResourcePermissionError> {
@@ -457,7 +469,7 @@ async fn delete_entity_now(
 async fn delete_permission_group_row(
     system: &Valence,
     own_id: &str,
-    kind: ResourceKind,
+    kind: &ResourceKindDescriptor,
     resource_id: &str,
 ) -> Result<(), ResourcePermissionError> {
     let record_id = own_id.trim();
@@ -522,13 +534,14 @@ async fn delete_permission_group_row(
 /// Restrict violation or backend failure blocks a step.
 pub async fn delete_resource_permission_bundle(
     v: &Valence,
-    kind: ResourceKind,
+    kind: impl Into<ResourceKindDescriptor>,
     resource_id: &str,
 ) -> Result<(), ResourcePermissionError> {
+    let kind = kind.into();
     let resource_id = resource_id.trim().to_string();
     if normalize_id_fragment(&resource_id).is_empty() {
         return Err(ResourcePermissionError::InvalidResourceId {
-            kind: kind.prefix().to_string(),
+            kind: kind.prefix.to_string(),
         });
     }
 
@@ -538,11 +551,10 @@ pub async fn delete_resource_permission_bundle(
 
     info!(
         "[permission] delete_resource_permission_bundle start kind={} resource_id={}",
-        kind.prefix(),
-        resource_id
+        kind.prefix, resource_id
     );
 
-    for action in kind.default_actions() {
+    for &action in kind.actions {
         let perm_id = permission_record_id(kind, &resource_id, action);
         let name = permission_name(kind, &resource_id, action);
         let mut ids = std::collections::HashSet::new();
@@ -552,7 +564,7 @@ pub async fn delete_resource_permission_bundle(
             .limit(1)
             .first()
             .await
-            .map_err(|e| map_err(kind, &resource_id, "query_permission_for_delete", e))?
+            .map_err(|e| map_err(&kind, &resource_id, "query_permission_for_delete", e))?
         {
             if let Some(id) = by_name
                 .id()
@@ -566,7 +578,7 @@ pub async fn delete_resource_permission_bundle(
                 "permission",
                 &id,
                 &system,
-                kind,
+                &kind,
                 &resource_id,
                 "delete_permission",
             )
@@ -581,20 +593,20 @@ pub async fn delete_resource_permission_bundle(
         "permission_group_principal",
         &owners_principal_id,
         &system,
-        kind,
+        &kind,
         &resource_id,
         "delete_owners_principal",
     )
     .await?;
 
-    delete_permission_group_row(&system, &own_id, kind, &resource_id).await?;
+    delete_permission_group_row(&system, &own_id, &kind, &resource_id).await?;
     debug!("[permission] deleted owners group id={own_id}");
 
     delete_entity_now(
         "permission_domain",
         &dom_id,
         &system,
-        kind,
+        &kind,
         &resource_id,
         "delete_domain",
     )
@@ -603,8 +615,7 @@ pub async fn delete_resource_permission_bundle(
 
     info!(
         "[permission] delete_resource_permission_bundle ok kind={} resource_id={}",
-        kind.prefix(),
-        resource_id
+        kind.prefix, resource_id
     );
     Ok(())
 }

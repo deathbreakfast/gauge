@@ -6,14 +6,16 @@
 //! - Per-resource ensure: [`crate::resource_permissions::ensure_resource_permission_bundle`]
 //!   (creator = Maintain owner)
 //! - Valence privacy helpers: [`crate::resource_permissions::StaticPermissionGate`],
-//!   [`crate::resource_permissions::ResourcePermissionPolicy`], and schema-wireable
-//!   constants (`CREATE_*`, `*_RESOURCE`)
+//!   [`crate::resource_permissions::ResourcePermissionPolicy`] (products declare their
+//!   own `CREATE_*` / `*_RESOURCE` consts beside their descriptors)
 //!
 //! # Does not own
 //!
 //! - Product-named bootstraps (`create_initial_*_groups` live on Gluon / Neutrino /
 //!   Nucleus and call [`seed_resource_kind_catalog`])
 //! - Product create/seal orchestration (Neutrino / Gluon / Nucleus call ensure internally)
+//! - Product-named Valence privacy consts (`CREATE_*`, `*_RESOURCE` live on Gluon /
+//!   Neutrino / Nucleus)
 //! - Static app manifests ([`crate::manifest_sync`]) or Gluon registry operator groups
 //!   ([`crate::gluon_operator_groups`])
 //!
@@ -29,8 +31,9 @@
 //! | Typed host-wiring errors | [`crate::resource_permissions::ResourcePermissionError`] |
 //! | Permission name for `actor_can` | [`crate::resource_permissions::permission_name`] |
 //! | Per-kind umbrella grants | [`crate::resource_permissions::UmbrellaPolicy`] / [`ResourceKind::umbrella_policy`] |
-//! | Coarse create privacy | [`crate::resource_permissions::CREATE_GLUON_APPLICATIONS`], [`crate::resource_permissions::CREATE_NEUTRINO_SECRETS`], … |
-//! | Per-resource CRUD privacy | [`crate::resource_permissions::GLUON_APP_RESOURCE`], [`crate::resource_permissions::NUCLEUS_STACK_RESOURCE`], … |
+//! | Declare a product-owned kind | [`crate::resource_permissions::ResourceKindDescriptor`] |
+//! | Coarse create privacy type | [`crate::resource_permissions::StaticPermissionGate`] |
+//! | Per-resource CRUD privacy type | [`crate::resource_permissions::ResourcePermissionPolicy`] |
 //!
 //! # Host wiring (required)
 //!
@@ -62,10 +65,22 @@
 //!
 //! Product APIs then auto-ensure per-resource bundles; integrators do **not** call
 //! [`crate::resource_permissions::ensure_resource_permission_bundle`] as a second step after create.
+//!
+//! # Kinds Gauge does not name
+//!
+//! [`ResourceKind`] is a **frozen wire-format compatibility shim** for the four
+//! kinds that predate [`crate::resource_permissions::ResourceKindDescriptor`].
+//! Products must declare their own `const ResourceKindDescriptor` and
+//! [`StaticPermissionGate`] / [`ResourcePermissionPolicy`] consts; do not add
+//! variants here. A later Gauge publish can retire the enum once golden tests and
+//! git consumers no longer need the variants. Until then, prefer
+//! [`ResourceKind::descriptor`] or a product descriptor over the enum itself.
 
 mod default_groups;
 mod ensure;
 mod error;
+#[cfg(test)]
+mod golden_names;
 mod kinds;
 mod policy;
 mod spec;
@@ -75,7 +90,7 @@ pub use ensure::{delete_resource_permission_bundle, ensure_resource_permission_b
 pub use error::ResourcePermissionError;
 pub use kinds::{
     domain_id, normalize_id_fragment, owners_group_id, permission_name, permission_record_id,
-    ResourceAction, ResourceKind, UmbrellaPolicy,
+    ResourceAction, ResourceKind, ResourceKindDescriptor, UmbrellaPolicy,
 };
 pub use policy::{
     ResourcePermissionPolicy, StaticPermissionGate, CREATE_GLUON_APPLICATIONS,

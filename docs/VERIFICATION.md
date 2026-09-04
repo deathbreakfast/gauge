@@ -38,7 +38,7 @@ No monorepo sibling clones. Playwright / `gauge-app` hydrate are **not** CI jobs
 |-----|----------|
 | **fmt** | `cargo fmt -p gauge -p embedded-gauge-host -- --check` |
 | **clippy** | `cargo clippy -p gauge --features ssr --lib -- -D warnings` then scoped `--test …` suites below, then `cargo clippy -p embedded-gauge-host --all-targets -- -D warnings` |
-| **test** | `cargo test -p gauge --test workspace_members --test product_surface`; domain `--features ssr` contract suites; `cargo check` + `cargo run -p embedded-gauge-host` |
+| **test** | `cargo test -p gauge --test workspace_members --test product_surface`; `cargo test -p gauge --features ssr --lib`; domain `--features ssr` contract suites; `cargo check` + `cargo run -p embedded-gauge-host` |
 | **docs** | `RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p gauge --features ssr --no-deps` |
 
 Clippy/test contract suite names (same list in both jobs):
@@ -82,6 +82,7 @@ cargo clippy -p gauge --features ssr \
   -- -D warnings
 cargo clippy -p embedded-gauge-host --all-targets -- -D warnings
 cargo test -p gauge --test workspace_members --test product_surface
+cargo test -p gauge --features ssr --lib
 cargo test -p gauge --features ssr \
   --test permission_domain_contract \
   --test permission_flows_integration \
@@ -187,6 +188,9 @@ Covering integ tests (service primary):
   Super User Ok / session principal walk (`privacy_policy_integration`)
 - `ensure_creates_bundle_and_maintainer_owns_maintain` /
   `ensure_rejects_missing_maintainer` / `ensure_rejects_invalid_resource_id`
+- `resource_permissions::golden_names::*` — frozen permission names, domain ids,
+  owners groups, and record ids for the four platform kinds (lib units). A failure
+  here means deployed ACL rows would no longer be found by name.
 - `create_permission_request_notifies_permission_owners` /
   `create_permission_request_does_not_notify_non_owners_sad`
 - `search_registry_dispatches_to_registered_sources` /

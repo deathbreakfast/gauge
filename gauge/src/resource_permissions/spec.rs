@@ -5,15 +5,19 @@ use std::collections::HashMap;
 use super::kinds::{ResourceAction, ResourceKind};
 
 /// Input to [`super::ensure_resource_permission_bundle`].
+///
+/// `K` is the kind: [`ResourceKind`] by default, or
+/// [`super::ResourceKindDescriptor`] when the calling crate owns the resource kind
+/// and declares its own descriptor.
 #[derive(Debug, Clone)]
-pub struct ResourcePermissionSpec {
+pub struct ResourcePermissionSpec<K = ResourceKind> {
     /// Resource kind (drives naming and default umbrella groups).
-    pub kind: ResourceKind,
+    pub kind: K,
     /// Stable resource identifier (stack id, app id, secret id, …).
     pub resource_id: String,
     /// Human-readable label for the domain.
     pub display_name: String,
-    /// Actions to materialize. Empty → [`ResourceKind::default_actions`].
+    /// Actions to materialize. Empty → the kind's default actions.
     pub actions: Vec<ResourceAction>,
     /// Creating actor user id (bare id or `user:…`). **Required.**
     pub maintainer_actor: String,

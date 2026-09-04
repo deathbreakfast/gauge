@@ -7,7 +7,7 @@ use valence::{Actor, Model, RecordId, StringPredicate, Valence};
 use crate::generated::{Permission, PermissionDomain, PermissionGroup, PermissionGroupPrincipal};
 
 use super::error::ResourcePermissionError;
-use super::kinds::ResourceKind;
+use super::kinds::{ResourceKind, ResourceKindDescriptor};
 
 fn as_system(v: &Valence, operation: &str) -> Valence {
     v.with_actor(Actor::System {
@@ -213,7 +213,11 @@ async fn ensure_coarse_create_permission(
 }
 
 /// Default umbrella group ids for a resource kind (viewers / editors / operators / creators).
-#[derive(Debug, Clone, Copy)]
+///
+/// Const-constructible so a [`ResourceKindDescriptor`] can name its groups inline.
+/// Setting `editors` equal to `operators` collapses the two umbrellas, which is how
+/// Neutrino secrets avoid a standing edit-only group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KindDefaultGroups {
     /// Coarse create group id.
     pub creators: &'static str,
@@ -269,57 +273,56 @@ impl ResourceKind {
     }
 }
 
-/// Ensure default groups and the coarse `Create*` permission for one [`ResourceKind`].
+/// Ensure default groups and the coarse `Create*` permission for one resource kind.
 ///
 /// Call once per kind during **host wiring** (with Valence Gauge schemas registered),
 /// before product create/seal APIs. Idempotent. Product crates typically wrap this
 /// (e.g. Gluon’s `create_initial_gluon_groups`) with the kind’s domain ids.
+///
+/// `kind` takes a [`ResourceKind`], a [`ResourceKindDescriptor`], or a reference to
+/// one, so a product that declares its own kind seeds it through this same call.
 pub async fn seed_resource_kind_catalog(
     v: &Valence,
-    kind: ResourceKind,
+    kind: impl Into<ResourceKindDescriptor>,
     domain_id: &str,
     domain_name: &str,
     create_perm_id: &str,
 ) -> Result<(), ResourcePermissionError> {
-    let system = as_system(
-        v,
-        &format!("seed_resource_kind_catalog:{}", kind.display_label()),
-    );
-    info!(
-        "[permission] seed_resource_kind_catalog kind={} domain_id={domain_id}",
-        kind.display_label()
-    );
-    let g = kind.default_groups();
-    let create_name = kind.create_permission_name();
+    let kind = kind.into();
+    let label = kind.display_label;
+    let system = as_system(v, &format!("seed_resource_kind_catalog:{label}"));
+    info!("[permission] seed_resource_kind_catalog kind={label} domain_id={domain_id}");
+    let g = kind.groups;
+    let create_name = kind.create_permission;
 
     ensure_standalone_group(
         &system,
         g.creators,
-        &format!("{} creators", kind.display_label()),
-        &format!("May create new {} resources", kind.display_label()),
+        &format!("{label} creators"),
+        &format!("May create new {label} resources"),
     )
     .await?;
     ensure_standalone_group(
         &system,
         g.viewers,
-        &format!("{} viewers", kind.display_label()),
-        &format!("View umbrella for {}", kind.display_label()),
+        &format!("{label} viewers"),
+        &format!("View umbrella for {label}"),
     )
     .await?;
     if g.editors != g.operators {
         ensure_standalone_group(
             &system,
             g.editors,
-            &format!("{} editors", kind.display_label()),
-            &format!("Edit umbrella for {}", kind.display_label()),
+            &format!("{label} editors"),
+            &format!("Edit umbrella for {label}"),
         )
         .await?;
     }
     ensure_standalone_group(
         &system,
         g.operators,
-        &format!("{} operators", kind.display_label()),
-        &format!("Operator umbrella for {}", kind.display_label()),
+        &format!("{label} operators"),
+        &format!("Operator umbrella for {label}"),
     )
     .await?;
 
@@ -329,10 +332,10 @@ pub async fn seed_resource_kind_catalog(
         CoarseCreateSpec {
             domain_id,
             domain_name,
-            domain_description: &format!("Coarse create catalog for {}", kind.display_label()),
+            domain_description: &format!("Coarse create catalog for {label}"),
             permission_id: create_perm_id,
             permission_name: create_name,
-            permission_description: &format!("Create new {} resources", kind.display_label()),
+            permission_description: &format!("Create new {label} resources"),
             owners_group_id: &owners,
         },
     )

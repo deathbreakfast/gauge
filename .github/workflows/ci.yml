@@ -77,6 +77,9 @@ jobs:
           toolchain: nightly-2026-08-07
       - name: cargo test (workspace + product_surface needles)
         run: cargo test -p gauge --test workspace_members --test product_surface
+      # Holds the frozen resource-kind naming contract (resource_permissions::golden_names).
+      - name: cargo test (lib units)
+        run: cargo test -p gauge --features ssr --lib
       - name: cargo test (permission domain contracts)
         run: >
           cargo test -p gauge --features ssr

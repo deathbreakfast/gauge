@@ -1,5 +1,11 @@
 //! One-shot revoke of NeutrinoSecret umbrella grant edges.
 //!
+//! **Migration leftover.** Neutrino owns the secret resource policy
+//! (`UmbrellaPolicy::None`, create gate, and per-secret bundles). This script
+//! still lives in Gauge because Chronon script registration already depends on
+//! Gauge here; moving it into Neutrino needs Chronon wiring on that crate and is
+//! deferred.
+//!
 //! After [`crate::resource_permissions::UmbrellaPolicy::None`] for
 //! `NeutrinoSecret`, new bundles no longer grant `neutrino.secret.viewers` /
 //! `.operators`. Existing deployments still have those edges from earlier
