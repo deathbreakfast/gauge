@@ -72,8 +72,8 @@ const fn elevate_allowlist() -> &'static [(&'static str, &'static str)] {
             "one-shot principal edge migration",
         ),
         (
-            "scripts/revoke_neutrino_secret_umbrella_grants.rs",
-            "one-shot revoke of NeutrinoSecret umbrella grant edges",
+            "resource_permissions/revoke_umbrella_grants.rs",
+            "one-shot revoke of standing umbrella grant edges for a resource kind",
         ),
         (
             "super_user.rs",

@@ -869,7 +869,13 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
     let ov = user_valence(&system, operator);
     assert!(service::actor_can(&ov, &reveal).await?);
 
-    let first = gauge::scripts::revoke_neutrino_secret_umbrella_grants(&system).await?;
+    let groups = ResourceKind::NeutrinoSecret.descriptor().groups;
+    let first = gauge::resource_permissions::revoke_umbrella_grants(
+        &system,
+        ResourceKind::NeutrinoSecret,
+        &[groups.viewers, groups.operators],
+    )
+    .await?;
     assert!(first >= 1, "expected at least one revoke, got {first}");
     assert!(!service::actor_can(&ov, &reveal).await?);
 
@@ -890,7 +896,12 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
             .is_some()
     );
 
-    let second = gauge::scripts::revoke_neutrino_secret_umbrella_grants(&system).await?;
+    let second = gauge::resource_permissions::revoke_umbrella_grants(
+        &system,
+        ResourceKind::NeutrinoSecret,
+        &[groups.viewers, groups.operators],
+    )
+    .await?;
     assert_eq!(second, 0, "idempotent re-run must revoke nothing");
     Ok(())
 }

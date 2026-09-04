@@ -7,10 +7,12 @@
 //! | Ensure Super User group (run-once) | [`ensure_super_user_group_script`] |
 //! | Sync Super User membership from roles | [`sync_super_user_membership_roles_script`] |
 //! | Migrate legacy principal edges | [`migrate_permission_principal_connections`] |
-//! | Revoke `NeutrinoSecret` umbrella grants (migration leftover) | [`revoke_neutrino_secret_umbrella_grants_script`] |
 //!
 //! Script entry points return [`anyhow::Result`] (Chronon / Valence aggregation).
 //! Domain Super User helpers used by scripts live under [`crate::super_user`].
+//!
+//! Product-owned migration scripts (for example Neutrino secret umbrella revoke) live
+//! in the owning product crate behind its `chronon` feature.
 
 /// One-shot script that ensures the Super User group exists.
 #[cfg(feature = "ssr")]
@@ -24,20 +26,9 @@ pub mod migrate_principal_connections;
 #[cfg(feature = "ssr")]
 pub mod sync_super_user_membership_roles;
 
-/// One-shot revoke of NeutrinoSecret umbrella grant edges after UmbrellaPolicy::None.
-///
-/// Neutrino owns the policy; this module is a Gauge Chronon migration leftover
-/// (moving it needs Chronon deps on Neutrino — deferred).
-#[cfg(feature = "ssr")]
-pub mod revoke_neutrino_secret_umbrella_grants;
-
 #[cfg(feature = "ssr")]
 pub use ensure_super_user_group::ensure_super_user_group_script;
 #[cfg(feature = "ssr")]
 pub use migrate_principal_connections::migrate_permission_principal_connections;
-#[cfg(feature = "ssr")]
-pub use revoke_neutrino_secret_umbrella_grants::{
-    revoke_neutrino_secret_umbrella_grants, revoke_neutrino_secret_umbrella_grants_script,
-};
 #[cfg(feature = "ssr")]
 pub use sync_super_user_membership_roles::sync_super_user_membership_roles_script;

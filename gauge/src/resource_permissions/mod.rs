@@ -28,6 +28,7 @@
 //! | What a bundle creates (crate guide) | [What a resource bundle creates](crate#what-a-resource-bundle-creates) |
 //! | Who can act on a resource | [Who can act on a resource](crate#who-can-act-on-a-resource) |
 //! | Tear down per-resource ACL | [`crate::resource_permissions::delete_resource_permission_bundle`] |
+//! | Revoke standing umbrella grants | [`crate::resource_permissions::revoke_umbrella_grants`] |
 //! | Typed host-wiring errors | [`crate::resource_permissions::ResourcePermissionError`] |
 //! | Permission name for `actor_can` | [`crate::resource_permissions::permission_name`] |
 //! | Per-kind umbrella grants | [`crate::resource_permissions::UmbrellaPolicy`] / [`ResourceKind::umbrella_policy`] |
@@ -83,6 +84,7 @@ mod error;
 mod golden_names;
 mod kinds;
 mod policy;
+mod revoke_umbrella_grants;
 mod spec;
 
 pub use default_groups::{seed_resource_kind_catalog, KindDefaultGroups};
@@ -97,4 +99,5 @@ pub use policy::{
     CREATE_GLUON_APP_SETS, CREATE_NEUTRINO_SECRETS, CREATE_NUCLEUS_STACKS, GLUON_APP_RESOURCE,
     GLUON_APP_SET_RESOURCE, NEUTRINO_SECRET_RESOURCE, NUCLEUS_STACK_RESOURCE,
 };
+pub use revoke_umbrella_grants::revoke_umbrella_grants;
 pub use spec::{ResourcePermissionBundle, ResourcePermissionSpec};
