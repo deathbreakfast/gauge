@@ -75,10 +75,6 @@ const fn elevate_allowlist() -> &'static [(&'static str, &'static str)] {
             "scripts/revoke_neutrino_secret_umbrella_grants.rs",
             "one-shot revoke of NeutrinoSecret umbrella grant edges",
         ),
-        (
-            "super_user.rs",
-            "Super User membership graph read under System (typed get re-enters privacy)",
-        ),
     ]
 }
 
