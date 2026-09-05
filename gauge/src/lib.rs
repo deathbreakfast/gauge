@@ -253,9 +253,11 @@
 //! ## Delete a resource bundle
 //!
 //! [`resource_permissions::delete_resource_permission_bundle`] removes the ACL
-//! for one resource when the resource itself is deleted. Schema Restrict edges
-//! force the order: per-resource permissions first, then the owners group, then
-//! the domain. Allowed-principal M2M edges cascade with the permission rows.
+//! for one resource when the resource itself is deleted. Physical row deletes
+//! use Valence [`delete_entity_now`](valence::delete_entity_now) so cascade /
+//! Restrict ordering stays shared with the rest of the stack. Schema Restrict
+//! edges force the order: per-resource permissions first, then the owners group,
+//! then the domain. Allowed-principal M2M edges cascade with the permission rows.
 //!
 //! The call runs as System internally because `permission_domain` delete is
 //! Super-User-only (same elevation pattern as `ensure`). It is idempotent: a
