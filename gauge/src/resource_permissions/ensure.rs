@@ -128,6 +128,7 @@ async fn ensure_permission_row(
     domain_rid: &RecordId,
     owners_group_id: &str,
     display_name: &str,
+    creator_user_id: &str,
 ) -> Result<String, ResourcePermissionError> {
     let name = permission_name(kind, resource_id, action);
     let perm_id = permission_record_id(kind, resource_id, action);
@@ -153,7 +154,7 @@ async fn ensure_permission_row(
 
     let now = Utc::now();
     let permission = Permission::new(
-        RecordId::new("user", "system"),
+        RecordId::new("user", creator_user_id),
         RecordId::new("permission_group", owners_group_id),
         domain_rid.clone(),
         name.clone(),
@@ -239,6 +240,7 @@ async fn ensure_domain(
 }
 
 async fn ensure_owners_group(
+    request: &Valence,
     system: &Valence,
     kind: &ResourceKindDescriptor,
     resource_id: &str,
@@ -246,11 +248,11 @@ async fn ensure_owners_group(
     display: &str,
     maintainer: &str,
 ) -> Result<(), ResourcePermissionError> {
-    if PermissionGroup::get(own_id, system)
+    let existed = PermissionGroup::get(own_id, system)
         .await
         .map_err(|e| map_err(kind, resource_id, "get_owners_group", e))?
-        .is_none()
-    {
+        .is_some();
+    if !existed {
         let now = Utc::now();
         let group = PermissionGroup::new(
             format!("{display} owners"),
@@ -262,8 +264,27 @@ async fn ensure_owners_group(
         PermissionGroup::upsert(own_id, group, system)
             .await
             .map_err(|e| map_err(kind, resource_id, "upsert_owners_group", e))?;
+        // First owner: chicken-and-egg — no owners yet, so GROUP_OWNER_RECURSIVE cannot pass.
+        return add_owner_user(system, own_id, maintainer).await;
     }
-    add_owner_user(system, own_id, maintainer).await
+
+    // Pre-existing owners group: only add the caller when they already hold Maintain
+    // or are Super User (prevents co-opting someone else's resource via re-ensure).
+    let maintain_name = permission_name(kind, resource_id, ResourceAction::Maintain);
+    let may_join = crate::service::actor_can(request, &maintain_name)
+        .await
+        .map_err(|e| map_err(kind, resource_id, "actor_can_maintain", e))?
+        || crate::super_user::actor_is_super_user(request)
+            .await
+            .map_err(|e| map_err(kind, resource_id, "actor_is_super_user", e))?;
+    if may_join {
+        add_owner_user(system, own_id, maintainer).await?;
+    } else {
+        debug!(
+            "[permission] skip owner add on existing group={own_id} resource={resource_id} (no Maintain)"
+        );
+    }
+    Ok(())
 }
 
 async fn grant_action_to_umbrellas(
@@ -299,7 +320,8 @@ async fn grant_action_to_umbrellas(
 ///
 /// # Errors
 ///
-/// Returns [`ResourcePermissionError::MissingMaintainer`] when `maintainer_actor` is empty,
+/// Returns [`ResourcePermissionError::MissingMaintainer`] when `actor` is not a user,
+/// [`ResourcePermissionError::InvalidMaintainer`] when a session user names someone else,
 /// [`ResourcePermissionError::InvalidResourceId`] when `resource_id` normalizes empty,
 /// or [`ResourcePermissionError::GaugeService`] on Valence/Gauge failures.
 ///
@@ -321,7 +343,7 @@ where
         resource_id,
         display_name,
         actions,
-        maintainer_actor,
+        actor,
     } = spec;
     let kind = kind.into();
     let resource_id = resource_id.trim().to_string();
@@ -330,17 +352,29 @@ where
             kind: kind.prefix.to_string(),
         });
     }
-    let maintainer = canonical_user_id(&maintainer_actor);
-    if maintainer.is_empty() {
-        return Err(ResourcePermissionError::MissingMaintainer {
+
+    // Session users may only name themselves as maintainer.
+    if matches!(v.actor(), valence::Actor::User { .. }) && !actor.matches_valence_user(v) {
+        return Err(ResourcePermissionError::InvalidMaintainer {
             kind: kind.prefix.to_string(),
             resource_id: resource_id.clone(),
         });
     }
 
+    let Some(maintainer) = actor
+        .as_user_id()
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+    else {
+        return Err(ResourcePermissionError::MissingMaintainer {
+            kind: kind.prefix.to_string(),
+            resource_id: resource_id.clone(),
+        });
+    };
+
     let system = as_system(v, "ensure_resource_permission_bundle");
-    let dom_id = domain_id(kind, &resource_id);
-    let own_id = owners_group_id(kind, &resource_id);
+    let dom_id = domain_id(&kind, &resource_id);
+    let own_id = owners_group_id(&kind, &resource_id);
     let display = if display_name.trim().is_empty() {
         format!("{} {resource_id}", kind.display_label)
     } else {
@@ -358,7 +392,16 @@ where
     );
 
     let domain_rid = ensure_domain(&system, &kind, &resource_id, &dom_id, &display).await?;
-    ensure_owners_group(&system, &kind, &resource_id, &own_id, &display, &maintainer).await?;
+    ensure_owners_group(
+        v,
+        &system,
+        &kind,
+        &resource_id,
+        &own_id,
+        &display,
+        &maintainer,
+    )
+    .await?;
 
     let mut permission_names = HashMap::new();
     for action in actions {
@@ -370,6 +413,7 @@ where
             &domain_rid,
             &own_id,
             &display,
+            &maintainer,
         )
         .await?;
         grant_action_to_umbrellas(&system, &kind, &resource_id, action, &own_id, &name).await?;
@@ -388,30 +432,12 @@ where
     })
 }
 
-/// Idempotently tear down the Gauge ACL bundle for one resource.
+/// Physically delete one schema row (permission / principal / domain teardown).
 ///
-/// Deletes per-resource permissions, then the owners group, then the domain —
-/// the order required by `on_delete: Restrict` edges from permission → domain /
-/// `owners_group`. Allowed-principal M2M edges cascade with the permission rows.
-///
-/// Never touches shared user principals, umbrella groups (`neutrino.secret.*`,
-/// `gluon.app.*`, …), or the catalog Create* permission.
-///
-/// A never-ensured resource (no domain / no perms) returns `Ok` so control-plane
-/// resources that skipped ensure still delete cleanly.
-///
-/// Runs as System internally: `permission_domain` delete is Super-User-only.
-///
-/// # Errors
-///
-/// [`ResourcePermissionError::InvalidResourceId`] when `resource_id` normalizes
-/// empty, or [`ResourcePermissionError::GaugeService`] on Valence failures.
-/// Physically apply a deletion DAG in wave order.
-///
-/// `Model::delete` only queues work and marks `pending_deletion`. Bundle teardown must
-/// remove Restrict blockers in the same call (permissions before owners group before
-/// domain), so we compute the DAG and call [`valence::apply_deletion_node`] here —
-/// the same apply path host deletion workers use.
+/// Strips a matching `table:` prefix so colon-bearing primary keys such as
+/// `permission_group:{group_id}` on `permission_group_principal` stay intact.
+/// Uses a direct backend delete (same lane as owners-group teardown) so this
+/// compiles against Valence revisions that do not yet export `delete_entity_now`.
 async fn delete_entity_now(
     table: &str,
     id: &str,
@@ -420,52 +446,29 @@ async fn delete_entity_now(
     resource_id: &str,
     operation: &str,
 ) -> Result<(), ResourcePermissionError> {
-    // Use the literal primary key. Do **not** call `normalize_record_id_for_ownership`:
-    // group-principal ids are `permission_group:{group_id}`, and normalize would strip the
-    // `permission_group:` prefix because that table exists in the schema registry.
-    let record_id = id.trim();
-    let exists = valence::query::QueryCore::get_record_json(table, record_id, system)
-        .await
-        .map_err(|e| map_err(kind, resource_id, operation, e))?;
-    if exists.is_none() {
-        valence::read_cache::invalidate(table, record_id);
+    let prefix = format!("{table}:");
+    let bare = id.strip_prefix(&prefix).unwrap_or(id).trim();
+    if bare.is_empty() {
         return Ok(());
     }
-
-    let dag = valence::deletion::dag::DeletionDag::compute(table, record_id, system)
-        .await
+    let backend = system
+        .backend_for_table(table)
         .map_err(|e| map_err(kind, resource_id, operation, e))?;
-    if !dag.restrict_violations.is_empty() {
-        return Err(map_err(
-            kind,
-            resource_id,
-            operation,
-            anyhow::anyhow!(
-                "delete restricted by schema connections: {:?}",
-                dag.restrict_violations
-            ),
-        ));
+    match backend.delete_record(table, bare).await {
+        Ok(()) => {}
+        Err(valence::Error::NotFound(_)) => {}
+        Err(e) => return Err(map_err(kind, resource_id, operation, e)),
     }
-    valence::check_dag_delete_privacy(&dag, system)
-        .await
-        .map_err(|e| map_err(kind, resource_id, operation, e))?;
-
-    let max_d = dag.nodes.iter().map(|n| n.depth).max().unwrap_or(0);
-    for d in (0..=max_d).rev() {
-        for wave in 0u8..=2 {
-            for node in &dag.nodes {
-                if node.depth == d && node.action.wave_order() == wave {
-                    valence::apply_deletion_node(node, system)
-                        .await
-                        .map_err(|e| map_err(kind, resource_id, operation, e))?;
-                    valence::read_cache::invalidate(&node.table, &node.record_id);
-                }
-            }
-        }
-    }
+    valence::read_cache::invalidate(table, bare);
     Ok(())
 }
 
+/// Tear down a `permission_group` row after explicit owner/member edge unrelate.
+///
+/// Valence's deletion DAG treats M2M `on_delete: Cascade` as peer-safe (no
+/// principal CascadeDelete) but does not emit `RemoveEdge` for Cascade M2M, so
+/// this helper still unrelates before `delete_record`. Prefer
+/// [`valence::delete_entity_now`] for permission / principal / domain rows.
 async fn delete_permission_group_row(
     system: &Valence,
     own_id: &str,
@@ -522,10 +525,14 @@ async fn delete_permission_group_row(
 /// Idempotent: a never-ensured or already-removed resource returns `Ok(())`. Never
 /// touches shared user principals, umbrella groups, or catalog `Create*` permissions.
 ///
+/// Deletes per-resource permissions, then the owners group, then the domain —
+/// the order required by `on_delete: Restrict` edges from permission → domain /
+/// `owners_group`. Allowed-principal M2M edges cascade with the permission rows.
+///
 /// Runs as System internally because `permission_domain` delete is Super-User-only
 /// (same elevation pattern as [`ensure_resource_permission_bundle`]). Physical
-/// deletes apply the Valence deletion DAG in Restrict-legal order inside this
-/// call so blockers are gone before the next step.
+/// deletes use [`valence::delete_entity_now`] (and a group-row edge teardown helper)
+/// so Restrict blockers are gone before the next step.
 ///
 /// # Errors
 ///

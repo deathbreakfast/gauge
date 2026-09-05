@@ -48,7 +48,20 @@ filter with can-edit / owner policies via `actor_can_view_history_subject`
 MessageBar.
 
 TM-SEC-06 forbids System elevates in `service/` and `side_effects/` (including
-`history_logger.rs`).
+`history_logger.rs`). `actor_is_super_user` uses the raw session walk (no elevate).
+
+### Resource permission bundles (outcome C)
+
+`ensure_resource_permission_bundle` still uses System for:
+
+1. **First-owner edge** on a brand-new owners group (chicken-and-egg before
+   `GROUP_OWNER_RECURSIVE` can pass), and
+2. **Umbrella grants** into global viewer/editor/operator groups the creator does
+   not own.
+
+`ActorId::from_valence` binds the maintainer to the live request actor. Pre-existing
+owners groups do **not** add the caller unless they already hold Maintain or are
+Super User. See `tests/no_elevate_path_gate.rs` allowlist rationales.
 
 Permission and permission-group **update/delete** succeed only for:
 

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use super::actor_id::ActorId;
 use super::kinds::{ResourceAction, ResourceKind};
 
 /// Input to [`super::ensure_resource_permission_bundle`].
@@ -19,8 +20,9 @@ pub struct ResourcePermissionSpec<K = ResourceKind> {
     pub display_name: String,
     /// Actions to materialize. Empty → the kind's default actions.
     pub actions: Vec<ResourceAction>,
-    /// Creating actor user id (bare id or `user:…`). **Required.**
-    pub maintainer_actor: String,
+    /// Creating actor. Prefer [`ActorId::from_valence`]; System callers use
+    /// [`ActorId::user_for_system`].
+    pub actor: ActorId,
 }
 
 /// Result of ensuring a resource permission bundle.

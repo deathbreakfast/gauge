@@ -7,7 +7,7 @@ mod common;
 use common::{seed_user, test_valence};
 use gauge::resource_permissions::{
     delete_resource_permission_bundle, ensure_resource_permission_bundle, permission_name,
-    seed_resource_kind_catalog, ResourceAction, ResourceKind, ResourcePermissionError,
+    seed_resource_kind_catalog, ActorId, ResourceAction, ResourceKind, ResourcePermissionError,
     ResourcePermissionPolicy, ResourcePermissionSpec, UmbrellaPolicy,
 };
 use gauge::service;
@@ -130,7 +130,7 @@ async fn ensure_creates_bundle_and_maintainer_owns_maintain() -> anyhow::Result<
             resource_id: "app-42".into(),
             display_name: "App 42".into(),
             actions: vec![],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -143,7 +143,7 @@ async fn ensure_creates_bundle_and_maintainer_owns_maintain() -> anyhow::Result<
             resource_id: "app-42".into(),
             display_name: "App 42".into(),
             actions: vec![],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -179,7 +179,7 @@ async fn ensure_rejects_missing_maintainer() -> anyhow::Result<()> {
             resource_id: "stack-1".into(),
             display_name: "Stack".into(),
             actions: vec![ResourceAction::View],
-            maintainer_actor: "  ".into(),
+            actor: ActorId::User(String::new()),
         },
     )
     .await
@@ -201,7 +201,7 @@ async fn ensure_rejects_invalid_resource_id() -> anyhow::Result<()> {
             resource_id: "   ".into(),
             display_name: "Blank".into(),
             actions: vec![],
-            maintainer_actor: "maint_u1".into(),
+            actor: ActorId::user_for_system(&system, "maint_u1").expect("actor"),
         },
     )
     .await
@@ -230,7 +230,7 @@ async fn default_groups_granted_on_view() -> anyhow::Result<()> {
             resource_id: "stk-9".into(),
             display_name: "Stack 9".into(),
             actions: ResourceKind::NucleusStack.default_actions(),
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -286,7 +286,7 @@ async fn resource_policy_allows_view_when_granted() -> anyhow::Result<()> {
             resource_id: "pol-1".into(),
             display_name: "Pol".into(),
             actions: vec![],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -359,7 +359,7 @@ async fn neutrino_umbrella_grants_empty_operators_denied_without_per_secret_gran
             resource_id: "sec-1".into(),
             display_name: "Secret 1".into(),
             actions: ResourceKind::NeutrinoSecret.default_actions(),
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -417,7 +417,7 @@ async fn colliding_resource_ids_get_distinct_bundles() -> anyhow::Result<()> {
             resource_id: "abc-123".into(),
             display_name: "Dash".into(),
             actions: vec![ResourceAction::Reveal],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -428,7 +428,7 @@ async fn colliding_resource_ids_get_distinct_bundles() -> anyhow::Result<()> {
             resource_id: "abc_123".into(),
             display_name: "Underscore".into(),
             actions: vec![ResourceAction::Reveal],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -488,7 +488,7 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
             resource_id: "app-del".into(),
             display_name: "Delete Me".into(),
             actions: vec![],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -498,6 +498,48 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
         .expect("domain");
     assert!(*domain.resource_scoped());
     assert_eq!(domain.resource_id().map(String::as_str), Some("app-del"));
+
+    let owners_principal_id = format!("permission_group:{}", bundle.owners_group_id);
+    let maintainer_principal_id = format!("user:{maintainer}");
+    let permission_ids: Vec<String> = ResourceKind::GluonApp
+        .default_actions()
+        .into_iter()
+        .map(|action| {
+            gauge::resource_permissions::permission_record_id(
+                ResourceKind::GluonApp,
+                "app-del",
+                action,
+            )
+        })
+        .collect();
+
+    // Pre-delete: owners-group principal wrapper and owner edge exist.
+    assert!(
+        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+            .await?
+            .is_some(),
+        "owners principal wrapper should exist before delete"
+    );
+    let owners_group = gauge::generated::PermissionGroup::get(&bundle.owners_group_id, &system)
+        .await?
+        .expect("owners group");
+    let owner_targets = owners_group.get_owners_record_ids(&system).await?;
+    assert!(
+        !owner_targets.is_empty(),
+        "owners group should have owner edges before delete"
+    );
+
+    // Pre-delete: each permission is granted to the owners group (allowed_principal edge).
+    for perm_id in &permission_ids {
+        let perm = gauge::generated::Permission::get(perm_id, &system)
+            .await?
+            .expect("permission before delete");
+        let allowed = perm.get_allowed_principals_record_ids(&system).await?;
+        assert!(
+            !allowed.is_empty(),
+            "permission {perm_id} should have allowed_principal edges before delete"
+        );
+    }
 
     delete_resource_permission_bundle(&system, ResourceKind::GluonApp, "app-del").await?;
     assert!(
@@ -510,6 +552,20 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
             .await?
             .is_none()
     );
+    assert!(
+        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+            .await?
+            .is_none(),
+        "owners principal wrapper must be gone (colon-bearing PK)"
+    );
+    for perm_id in &permission_ids {
+        assert!(
+            gauge::generated::Permission::get(perm_id, &system)
+                .await?
+                .is_none(),
+            "permission row {perm_id} should be gone"
+        );
+    }
     for action in ResourceKind::GluonApp.default_actions() {
         let name = permission_name(ResourceKind::GluonApp, "app-del", action);
         assert!(
@@ -523,7 +579,13 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
         );
     }
 
-    // Umbrella groups and catalog Create* survive.
+    // Shared user principal and umbrellas / catalog Create* survive.
+    assert!(
+        gauge::generated::PermissionUserPrincipal::get(&maintainer_principal_id, &system)
+            .await?
+            .is_some(),
+        "shared user principal must remain"
+    );
     assert!(
         gauge::generated::PermissionGroup::get("gluon.app.creators", &system)
             .await?
@@ -542,6 +604,100 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
 }
 
 #[tokio::test]
+async fn delete_resource_permission_bundle_colon_resource_id() -> anyhow::Result<()> {
+    let system = system_valence().await;
+    seed_gluon_catalog(&system).await?;
+    let maintainer = "maint_colon";
+    seed_user(maintainer, "maint_colon@example.test", &system).await;
+
+    // Colon in resource_id must survive ensure/delete; principal wrapper keeps
+    // `permission_group:{owners_id}` (different table prefix than the row table).
+    let resource_id = "gluon:app-colon-1";
+    let bundle = ensure_resource_permission_bundle(
+        &system,
+        ResourcePermissionSpec {
+            kind: ResourceKind::GluonApp,
+            resource_id: resource_id.into(),
+            display_name: "Colon App".into(),
+            actions: vec![ResourceAction::View],
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
+        },
+    )
+    .await?;
+
+    let owners_principal_id = format!("permission_group:{}", bundle.owners_group_id);
+    assert!(
+        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+            .await?
+            .is_some()
+    );
+
+    delete_resource_permission_bundle(&system, ResourceKind::GluonApp, resource_id).await?;
+
+    assert!(
+        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+            .await?
+            .is_none()
+    );
+    assert!(
+        gauge::generated::PermissionGroup::get(&bundle.owners_group_id, &system)
+            .await?
+            .is_none()
+    );
+    assert!(
+        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+            .await?
+            .is_none(),
+        "colon-bearing permission_group_principal id must delete cleanly"
+    );
+    assert!(
+        gauge::generated::PermissionUserPrincipal::get(&format!("user:{maintainer}"), &system)
+            .await?
+            .is_some(),
+        "shared principal survives colon-id resource teardown"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn delete_resource_permission_bundle_tears_down_after_ensure() -> anyhow::Result<()> {
+    let system = system_valence().await;
+    seed_gluon_catalog(&system).await?;
+    let maintainer = "maint_restrict";
+    seed_user(maintainer, "maint_restrict@example.test", &system).await;
+
+    let bundle = ensure_resource_permission_bundle(
+        &system,
+        ResourcePermissionSpec {
+            kind: ResourceKind::GluonApp,
+            resource_id: "app-restrict".into(),
+            display_name: "Restrict Probe".into(),
+            actions: vec![ResourceAction::View],
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
+        },
+    )
+    .await?;
+
+    assert!(
+        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+            .await?
+            .is_some(),
+        "domain must exist after ensure"
+    );
+
+    // Full bundle teardown succeeds (ordered deletes respect Restrict edges).
+    // Platform Restrict probes belong in Valence's delete_entity_now suite.
+    delete_resource_permission_bundle(&system, ResourceKind::GluonApp, "app-restrict").await?;
+    assert!(
+        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+            .await?
+            .is_none(),
+        "domain must be gone after bundle delete"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn resource_permission_list_browsable_for_outsider_happy() -> anyhow::Result<()> {
     let system = system_valence().await;
     seed_gluon_catalog(&system).await?;
@@ -555,7 +711,7 @@ async fn resource_permission_list_browsable_for_outsider_happy() -> anyhow::Resu
             resource_id: "app-list".into(),
             display_name: "Listable App".into(),
             actions: vec![ResourceAction::View],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -608,7 +764,7 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
             resource_id: "app-nest".into(),
             display_name: "Nest".into(),
             actions: vec![ResourceAction::View],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -707,7 +863,7 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
             resource_id: "app-raw".into(),
             display_name: "Raw".into(),
             actions: vec![ResourceAction::View],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -818,7 +974,7 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
             resource_id: "sec-rev".into(),
             display_name: "Revoke me".into(),
             actions: ResourceKind::NeutrinoSecret.default_actions(),
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;
@@ -941,7 +1097,7 @@ async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()>
             resource_id: "app-su".into(),
             display_name: "Foreign".into(),
             actions: vec![],
-            maintainer_actor: maintainer.into(),
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
         },
     )
     .await?;

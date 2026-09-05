@@ -70,6 +70,73 @@ const fn action_for_op(op: PrivacyOperation) -> Option<ResourceAction> {
     }
 }
 
+/// Maps Create/Update → Edit and Delete → Delete on a **parent** resource id field.
+///
+/// Use for satellite rows (e.g. routes keyed by `app_id`) where Create must not be
+/// denied solely because [`ResourcePermissionPolicy`] refuses Create. System always passes.
+#[derive(Debug, Clone)]
+pub struct ParentResourceEditPolicy<K = ResourceKind> {
+    /// Valence privacy rule name (stable).
+    pub rule_name: &'static str,
+    /// Parent resource kind for permission name construction.
+    pub kind: K,
+    /// JSON field holding the **parent** resource id (e.g. `"app_id"`).
+    pub id_field: &'static str,
+}
+
+const fn parent_action_for_op(op: PrivacyOperation) -> ResourceAction {
+    match op {
+        PrivacyOperation::Delete => ResourceAction::Delete,
+        PrivacyOperation::Read | PrivacyOperation::Create | PrivacyOperation::Update => {
+            ResourceAction::Edit
+        }
+    }
+}
+
+#[async_trait]
+impl<K> PolicyEvaluator for ParentResourceEditPolicy<K>
+where
+    K: Into<ResourceKindDescriptor> + Copy + std::fmt::Debug + Send + Sync + 'static,
+{
+    fn name(&self) -> &'static str {
+        self.rule_name
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Parent-resource Edit/Delete gate (Create→Edit via parent id field)")
+    }
+
+    async fn evaluate(
+        &self,
+        op: PrivacyOperation,
+        record: &serde_json::Value,
+        actor: &dyn ActorContext,
+        v: &Valence,
+    ) -> Result<bool> {
+        let viewer = actor_from_context(actor)?;
+        if viewer.is_system() {
+            return Ok(true);
+        }
+
+        let Some(resource_id) = record.get(self.id_field).and_then(resource_id_from_value) else {
+            return Ok(false);
+        };
+
+        let action = parent_action_for_op(op);
+        let name = permission_name(self.kind, resource_id, action);
+        let allowed = crate::service::actor_can(v, &name).await.map_err(|e| {
+            Error::Privacy(format!(
+                "Parent resource permission policy check failed for '{name}': {e}"
+            ))
+        })?;
+        Ok(allowed)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Bare resource id from a Valence record JSON field.
 ///
 /// Accepts a plain string **or** a serialized [`valence::RecordId`] object
