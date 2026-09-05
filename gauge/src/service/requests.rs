@@ -22,7 +22,7 @@ use super::permissions::grant_permission_to_user;
 /// Matches Valence `MaxLength(2000)` on `permission_request.reason`.
 pub const MAX_REQUEST_REASON_CHARS: usize = 2000;
 
-/// Cap for [`list_history`] result rows after ownership filtering.
+/// Cap for [`list_history`] rows loaded from Valence and returned after ownership filtering.
 pub const MAX_HISTORY_LIST_ROWS: usize = 500;
 
 pub async fn request_row_from_model(
@@ -273,6 +273,10 @@ pub async fn decide_permission_request(
 /// Thin compatibility over `RecordHistory` rows. Prefer
 /// `record_history_leptos::HistoryTimeline` for new UI. Requires an authenticated
 /// actor. Non–super-users only see history for subjects they can edit.
+///
+/// Hard-caps the Valence query at [`MAX_HISTORY_LIST_ROWS`]. When both
+/// `subject_kind` and `subject_id` are set, filters `source` in the query so
+/// ownership checks never scan the full table.
 pub async fn list_history(
     v: &Valence,
     subject_kind: Option<String>,
@@ -280,9 +284,18 @@ pub async fn list_history(
 ) -> anyhow::Result<Vec<HistoryEntryDto>> {
     let _actor_user_id = require_user_id(v)?;
     let lookup = v;
-    let rows = PermissionHistory::query(lookup)
-        .order_by_changed_at(valence::SortDirection::Desc)
-        .await?;
+    let mut query =
+        PermissionHistory::query(lookup).order_by_changed_at(valence::SortDirection::Desc);
+    if let (Some(ref want_kind), Some(ref want_id)) = (&subject_kind, &subject_id) {
+        if !want_kind.is_empty() && !want_id.is_empty() {
+            query = query.where_source(valence::RecordPredicate::Equals(valence::RecordId::new(
+                want_kind.as_str(),
+                want_id.as_str(),
+            )));
+        }
+    }
+    #[allow(clippy::cast_possible_truncation)] // MAX_HISTORY_LIST_ROWS is 500
+    let rows = query.limit(MAX_HISTORY_LIST_ROWS as u32).await?;
     let is_super = actor_is_super_user(v).await?;
     let mut out = Vec::with_capacity(rows.len().min(MAX_HISTORY_LIST_ROWS));
     for row in rows {

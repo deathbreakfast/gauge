@@ -2,6 +2,19 @@
 //!
 //! Resolves the singleton Super User permission group and related membership
 //! scripts used by Chronon ops and runtime bypass checks.
+//!
+//! # Actor elevation (SM-25)
+//!
+//! [`actor_is_super_user`] walks the well-known Super User group graph under the
+//! **request** Valence with raw backend reads (same shape as
+//! [`crate::actor_can_raw`]). It must not rebind to `Actor::System` mid-request.
+//! That path is for membership evaluation only — never for TOTP step-up, grant
+//! mutations, or vault material.
+//!
+//! Chronon scripts in [`crate::scripts`] start as System from their job context
+//! (not a session elevate). TM-SEC-06 / `tests/no_elevate_path_gate.rs` forbids
+//! `with_actor(Actor::System …)` outside its allowlist; this module is not on
+//! that list.
 
 use chrono::Utc;
 use std::collections::HashSet;
@@ -62,6 +75,9 @@ async fn ensure_user_principal(
 ///
 /// Membership in any other group that happens to be named [`SUPER_USER_GROUP_NAME`]
 /// is ignored (fail closed against duplicate-name privilege escalation).
+///
+/// Uses the session Valence and raw group/principal reads only. Do not reintroduce
+/// a mid-request System elevate here for step-up or mutates (SM-25).
 pub async fn actor_is_super_user(v: &Valence) -> anyhow::Result<bool> {
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(crate::touch_schema_inventory);
@@ -79,13 +95,10 @@ pub async fn actor_is_super_user(v: &Valence) -> anyhow::Result<bool> {
     user_ids.sort();
     user_ids.dedup();
 
-    let system = v.with_actor(valence::Actor::System {
-        operation: "permission_actor_is_super_user".to_string(),
-    });
-    let Some(group) = load_super_user_group_raw(&system).await? else {
+    let Some(group) = load_super_user_group_raw(v).await? else {
         return Ok(false);
     };
-    group_has_recursive_member(&group, &user_ids, &system).await
+    group_has_recursive_member(&group, &user_ids, v).await
 }
 
 async fn load_super_user_group_raw(system: &Valence) -> anyhow::Result<Option<PermissionGroup>> {

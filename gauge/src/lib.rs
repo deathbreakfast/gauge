@@ -43,6 +43,11 @@
 //! - **Super User group** — Chronon/script helpers that ensure the well-known
 //!   Super User group exists at boot so privilege is pinned to a fixed group id.
 //!   [Get started](#super-user-bootstrap)
+//! - **Privilege-shaped mutations** — Domain ops that change who can act
+//!   (grants, membership, ownership, nested groups, permission delete/update,
+//!   request decide). Product servers gate these with TOTP step-up; taxonomy
+//!   create for domains/groups stays session + `GaugeAdmin` only.
+//!   [Get started](#privilege-shaped-mutations)
 //!
 //! Domain CRUD and access checks return `anyhow::Result`; classifiable failures
 //! use [`service::GaugeServiceError`] (downcast). Host resource wiring returns
@@ -504,6 +509,54 @@
 //! Failures wrap as `anyhow` with context (`failed ensuring Super User group`).
 //! See root `SECURITY.md` for id vs display-name pinning. Next:
 //! [Runtime access checks](#runtime-access-checks).
+//!
+//! ## Privilege-shaped mutations
+//!
+//! Privilege-shaped mutations are the domain service calls that change who can
+//! act: grant/revoke allow-lists, group membership and ownership, nested group
+//! edges, permission update/delete, group delete, and request decide. Hosts that
+//! expose these through Leptos server functions require a recent TOTP sudo
+//! window (macro `step_up`) before the call proceeds. Membership and ownership
+//! changes on the well-known Super User group additionally need a fresh TOTP on
+//! that request. Routine taxonomy create (`create_domain`, `create_group`) and
+//! request create stay session + `GaugeAdmin` / owner only.
+//!
+//! **Prerequisites:** `ssr`; authenticated Valence actor with the right grants;
+//! product step-up wiring when calling through gauge-app server functions.
+//!
+//! 1. Classify the mutation as privilege-shaped (grant/membership/decide/delete)
+//!    or taxonomy-only.
+//! 2. For privilege-shaped paths, ensure the host has opened a step-up window
+//!    (or collected a fresh code for Super User membership).
+//! 3. Call the matching `service` API under the session actor.
+//!
+//! ```ignore
+//! use gauge::service::{
+//!     decide_permission_request, delete_permission, grant_permission_to_user,
+//!     revoke_permission_from_user,
+//! };
+//! use gauge::types::{PermissionRequestDecision, PermissionRequestDecisionInput};
+//!
+//! // Tier A examples — gauge-app wraps these with `step_up` (window mode).
+//! grant_permission_to_user(&permission_id, "alice", &v).await?;
+//! revoke_permission_from_user(&permission_id, "alice", &v).await?;
+//! decide_permission_request(
+//!     PermissionRequestDecisionInput {
+//!         request_id: request_id.clone(),
+//!         decision: PermissionRequestDecision::Approve,
+//!     },
+//!     &v,
+//! )
+//! .await?;
+//! delete_permission(&permission_id, &v).await?;
+//! assert!(!permission_id.is_empty());
+//! ```
+//!
+//! Failures surface as `anyhow` (policy deny, missing rows). Product servers map
+//! missing step-up to `STEP_UP:…` via Higgs/`uf_product`. Full Tier A inventory:
+//! root `SECURITY.md` and gauge-app `server` attributes. Next:
+//! [Grant and revoke](#grant-and-revoke-allow-lists) or
+//! [Super User bootstrap](#super-user-bootstrap).
 //!
 //! ## Feature flags
 //!

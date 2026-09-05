@@ -85,8 +85,19 @@ Expected contract when a host mounts `PermissionRoutes` from gauge-uf-app:
   fresh TOTP code on that call (window alone is not enough).
 - **Owner / Super User** enforced in Valence policies and mirrored in `gauge::service` for defense in depth.
 - **Super User** is pinned to well-known group id `super_user_group`; duplicate groups that reuse the display name do not grant privilege. `delete_group` and nested-group membership on that well-known id are blocked in `gauge::service`.
+- **`actor_is_super_user` (SM-25 Fixed):** membership walks the well-known
+  `super_user_group` graph under the **session** Valence with raw backend reads
+  (same confinement as `actor_can_raw`). No mid-request `Actor::System` rebind.
+  That check is membership evaluation only — never for TOTP step-up, grant
+  mutations, or vault material. `tests/no_elevate_path_gate.rs` (TM-SEC-06)
+  forbids System elevates outside its allowlist; `super_user.rs` is not listed.
+  Chronon `sync_super_user_membership_roles` still starts as System from the
+  script context.
 - **`create_permission`** requires the actor to own/control an explicitly supplied `owners_group_id` (default owner group is created when omitted).
 - **User-facing reads** (`list`/`get` for permissions, groups, domains) use session-scoped Valence. The grant graph (`allow_list` on permissions; owners and members on groups) is returned only to editors (owners-group maintainers and Super User). Every other authenticated reader gets an empty list — withheld, not "nobody holds this."
 - **Catalog enumeration (accepted residual):** any authenticated user can browse every permission and group by name, including resource-scoped rows such as `neutrino_secret.{id}.Reveal`. That browsability is the access-request surface. Revisit if a deployment ever serves more than one tenant.
 - **`search_principals`** clamps `max_results` (1..=50) and logs query length only (not the search string).
-- **History pagination:** `list_history` must page at the query layer; loading every `PermissionHistory` row and filtering in Rust is not acceptable.
+- **History pagination:** `list_history` applies Valence `.limit(MAX_HISTORY_LIST_ROWS)`
+  (500) and, when both `subject_kind` and `subject_id` are set, filters `source` in the
+  query before ownership checks. Unfiltered global lists still ownership-filter in
+  process after the hard scan cap (may under-return vs total editable rows).
