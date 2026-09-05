@@ -178,7 +178,7 @@
 //!
 //! ```ignore
 //! use gauge::resource_permissions::{
-//!     ensure_resource_permission_bundle, permission_name, ResourceAction,
+//!     ensure_resource_permission_bundle, permission_name, ActorId, ResourceAction,
 //!     ResourceKind, ResourcePermissionSpec,
 //! };
 //!
@@ -189,7 +189,7 @@
 //!         resource_id: "abc-123".into(),
 //!         display_name: "Demo secret".into(),
 //!         actions: vec![],
-//!         maintainer_actor: "alice".into(),
+//!         actor: ActorId::user_for_system(&valence, "alice").expect("system"),
 //!     },
 //! )
 //! .await?;

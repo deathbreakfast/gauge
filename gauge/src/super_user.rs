@@ -62,6 +62,10 @@ async fn ensure_user_principal(
 ///
 /// Membership in any other group that happens to be named [`SUPER_USER_GROUP_NAME`]
 /// is ignored (fail closed against duplicate-name privilege escalation).
+///
+/// Uses raw backend reads under the **session** Valence (no mid-request System elevate).
+/// Typed `PermissionGroup::get` would re-enter privacy; raw walks match
+/// [`crate::actor_can_raw`] and the Super User policy evaluator.
 pub async fn actor_is_super_user(v: &Valence) -> anyhow::Result<bool> {
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(crate::touch_schema_inventory);
@@ -79,13 +83,11 @@ pub async fn actor_is_super_user(v: &Valence) -> anyhow::Result<bool> {
     user_ids.sort();
     user_ids.dedup();
 
-    let system = v.with_actor(valence::Actor::System {
-        operation: "permission_actor_is_super_user".to_string(),
-    });
-    let Some(group) = load_super_user_group_raw(&system).await? else {
+    // Raw membership walk under the request Valence — no System rebind.
+    let Some(group) = load_super_user_group_raw(v).await? else {
         return Ok(false);
     };
-    group_has_recursive_member(&group, &user_ids, &system).await
+    group_has_recursive_member(&group, &user_ids, v).await
 }
 
 async fn load_super_user_group_raw(system: &Valence) -> anyhow::Result<Option<PermissionGroup>> {

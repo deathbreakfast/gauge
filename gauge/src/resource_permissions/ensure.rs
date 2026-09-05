@@ -128,6 +128,7 @@ async fn ensure_permission_row(
     domain_rid: &RecordId,
     owners_group_id: &str,
     display_name: &str,
+    creator_user_id: &str,
 ) -> Result<String, ResourcePermissionError> {
     let name = permission_name(kind, resource_id, action);
     let perm_id = permission_record_id(kind, resource_id, action);
@@ -153,7 +154,7 @@ async fn ensure_permission_row(
 
     let now = Utc::now();
     let permission = Permission::new(
-        RecordId::new("user", "system"),
+        RecordId::new("user", creator_user_id),
         RecordId::new("permission_group", owners_group_id),
         domain_rid.clone(),
         name.clone(),
@@ -239,6 +240,7 @@ async fn ensure_domain(
 }
 
 async fn ensure_owners_group(
+    request: &Valence,
     system: &Valence,
     kind: &ResourceKindDescriptor,
     resource_id: &str,
@@ -246,11 +248,11 @@ async fn ensure_owners_group(
     display: &str,
     maintainer: &str,
 ) -> Result<(), ResourcePermissionError> {
-    if PermissionGroup::get(own_id, system)
+    let existed = PermissionGroup::get(own_id, system)
         .await
         .map_err(|e| map_err(kind, resource_id, "get_owners_group", e))?
-        .is_none()
-    {
+        .is_some();
+    if !existed {
         let now = Utc::now();
         let group = PermissionGroup::new(
             format!("{display} owners"),
@@ -262,8 +264,27 @@ async fn ensure_owners_group(
         PermissionGroup::upsert(own_id, group, system)
             .await
             .map_err(|e| map_err(kind, resource_id, "upsert_owners_group", e))?;
+        // First owner: chicken-and-egg — no owners yet, so GROUP_OWNER_RECURSIVE cannot pass.
+        return add_owner_user(system, own_id, maintainer).await;
     }
-    add_owner_user(system, own_id, maintainer).await
+
+    // Pre-existing owners group: only add the caller when they already hold Maintain
+    // or are Super User (prevents co-opting someone else's resource via re-ensure).
+    let maintain_name = permission_name(kind, resource_id, ResourceAction::Maintain);
+    let may_join = crate::service::actor_can(request, &maintain_name)
+        .await
+        .map_err(|e| map_err(kind, resource_id, "actor_can_maintain", e))?
+        || crate::super_user::actor_is_super_user(request)
+            .await
+            .map_err(|e| map_err(kind, resource_id, "actor_is_super_user", e))?;
+    if may_join {
+        add_owner_user(system, own_id, maintainer).await?;
+    } else {
+        debug!(
+            "[permission] skip owner add on existing group={own_id} resource={resource_id} (no Maintain)"
+        );
+    }
+    Ok(())
 }
 
 async fn grant_action_to_umbrellas(
@@ -299,7 +320,8 @@ async fn grant_action_to_umbrellas(
 ///
 /// # Errors
 ///
-/// Returns [`ResourcePermissionError::MissingMaintainer`] when `maintainer_actor` is empty,
+/// Returns [`ResourcePermissionError::MissingMaintainer`] when `actor` is not a user,
+/// [`ResourcePermissionError::InvalidMaintainer`] when a session user names someone else,
 /// [`ResourcePermissionError::InvalidResourceId`] when `resource_id` normalizes empty,
 /// or [`ResourcePermissionError::GaugeService`] on Valence/Gauge failures.
 ///
@@ -321,7 +343,7 @@ where
         resource_id,
         display_name,
         actions,
-        maintainer_actor,
+        actor,
     } = spec;
     let kind = kind.into();
     let resource_id = resource_id.trim().to_string();
@@ -330,17 +352,29 @@ where
             kind: kind.prefix.to_string(),
         });
     }
-    let maintainer = canonical_user_id(&maintainer_actor);
-    if maintainer.is_empty() {
-        return Err(ResourcePermissionError::MissingMaintainer {
+
+    // Session users may only name themselves as maintainer.
+    if matches!(v.actor(), valence::Actor::User { .. }) && !actor.matches_valence_user(v) {
+        return Err(ResourcePermissionError::InvalidMaintainer {
             kind: kind.prefix.to_string(),
             resource_id: resource_id.clone(),
         });
     }
 
+    let Some(maintainer) = actor
+        .as_user_id()
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+    else {
+        return Err(ResourcePermissionError::MissingMaintainer {
+            kind: kind.prefix.to_string(),
+            resource_id: resource_id.clone(),
+        });
+    };
+
     let system = as_system(v, "ensure_resource_permission_bundle");
-    let dom_id = domain_id(kind, &resource_id);
-    let own_id = owners_group_id(kind, &resource_id);
+    let dom_id = domain_id(&kind, &resource_id);
+    let own_id = owners_group_id(&kind, &resource_id);
     let display = if display_name.trim().is_empty() {
         format!("{} {resource_id}", kind.display_label)
     } else {
@@ -358,7 +392,16 @@ where
     );
 
     let domain_rid = ensure_domain(&system, &kind, &resource_id, &dom_id, &display).await?;
-    ensure_owners_group(&system, &kind, &resource_id, &own_id, &display, &maintainer).await?;
+    ensure_owners_group(
+        v,
+        &system,
+        &kind,
+        &resource_id,
+        &own_id,
+        &display,
+        &maintainer,
+    )
+    .await?;
 
     let mut permission_names = HashMap::new();
     for action in actions {
@@ -370,6 +413,7 @@ where
             &domain_rid,
             &own_id,
             &display,
+            &maintainer,
         )
         .await?;
         grant_action_to_umbrellas(&system, &kind, &resource_id, action, &own_id, &name).await?;
@@ -388,11 +432,12 @@ where
     })
 }
 
-/// Physically delete one schema row via Valence's synchronous deletion API.
+/// Physically delete one schema row (permission / principal / domain teardown).
 ///
-/// Delegates to [`valence::delete_entity_now`], which preserves colon-bearing
-/// primary keys such as `permission_group:{group_id}` on
-/// `permission_group_principal` (only strips a matching `table:` prefix).
+/// Strips a matching `table:` prefix so colon-bearing primary keys such as
+/// `permission_group:{group_id}` on `permission_group_principal` stay intact.
+/// Uses a direct backend delete (same lane as owners-group teardown) so this
+/// compiles against Valence revisions that do not yet export `delete_entity_now`.
 async fn delete_entity_now(
     table: &str,
     id: &str,
@@ -401,9 +446,21 @@ async fn delete_entity_now(
     resource_id: &str,
     operation: &str,
 ) -> Result<(), ResourcePermissionError> {
-    valence::delete_entity_now(table, id, system)
-        .await
-        .map_err(|e| map_err(kind, resource_id, operation, e))
+    let prefix = format!("{table}:");
+    let bare = id.strip_prefix(&prefix).unwrap_or(id).trim();
+    if bare.is_empty() {
+        return Ok(());
+    }
+    let backend = system
+        .backend_for_table(table)
+        .map_err(|e| map_err(kind, resource_id, operation, e))?;
+    match backend.delete_record(table, bare).await {
+        Ok(()) => {}
+        Err(valence::Error::NotFound(_)) => {}
+        Err(e) => return Err(map_err(kind, resource_id, operation, e)),
+    }
+    valence::read_cache::invalidate(table, bare);
+    Ok(())
 }
 
 /// Tear down a `permission_group` row after explicit owner/member edge unrelate.
