@@ -388,30 +388,11 @@ where
     })
 }
 
-/// Idempotently tear down the Gauge ACL bundle for one resource.
+/// Physically delete one schema row via Valence's synchronous deletion API.
 ///
-/// Deletes per-resource permissions, then the owners group, then the domain —
-/// the order required by `on_delete: Restrict` edges from permission → domain /
-/// `owners_group`. Allowed-principal M2M edges cascade with the permission rows.
-///
-/// Never touches shared user principals, umbrella groups (`neutrino.secret.*`,
-/// `gluon.app.*`, …), or the catalog Create* permission.
-///
-/// A never-ensured resource (no domain / no perms) returns `Ok` so control-plane
-/// resources that skipped ensure still delete cleanly.
-///
-/// Runs as System internally: `permission_domain` delete is Super-User-only.
-///
-/// # Errors
-///
-/// [`ResourcePermissionError::InvalidResourceId`] when `resource_id` normalizes
-/// empty, or [`ResourcePermissionError::GaugeService`] on Valence failures.
-/// Physically apply a deletion DAG in wave order.
-///
-/// `Model::delete` only queues work and marks `pending_deletion`. Bundle teardown must
-/// remove Restrict blockers in the same call (permissions before owners group before
-/// domain), so we compute the DAG and call [`valence::apply_deletion_node`] here —
-/// the same apply path host deletion workers use.
+/// Delegates to [`valence::delete_entity_now`], which preserves colon-bearing
+/// primary keys such as `permission_group:{group_id}` on
+/// `permission_group_principal` (only strips a matching `table:` prefix).
 async fn delete_entity_now(
     table: &str,
     id: &str,
@@ -420,52 +401,17 @@ async fn delete_entity_now(
     resource_id: &str,
     operation: &str,
 ) -> Result<(), ResourcePermissionError> {
-    // Use the literal primary key. Do **not** call `normalize_record_id_for_ownership`:
-    // group-principal ids are `permission_group:{group_id}`, and normalize would strip the
-    // `permission_group:` prefix because that table exists in the schema registry.
-    let record_id = id.trim();
-    let exists = valence::query::QueryCore::get_record_json(table, record_id, system)
+    valence::delete_entity_now(table, id, system)
         .await
-        .map_err(|e| map_err(kind, resource_id, operation, e))?;
-    if exists.is_none() {
-        valence::read_cache::invalidate(table, record_id);
-        return Ok(());
-    }
-
-    let dag = valence::deletion::dag::DeletionDag::compute(table, record_id, system)
-        .await
-        .map_err(|e| map_err(kind, resource_id, operation, e))?;
-    if !dag.restrict_violations.is_empty() {
-        return Err(map_err(
-            kind,
-            resource_id,
-            operation,
-            anyhow::anyhow!(
-                "delete restricted by schema connections: {:?}",
-                dag.restrict_violations
-            ),
-        ));
-    }
-    valence::check_dag_delete_privacy(&dag, system)
-        .await
-        .map_err(|e| map_err(kind, resource_id, operation, e))?;
-
-    let max_d = dag.nodes.iter().map(|n| n.depth).max().unwrap_or(0);
-    for d in (0..=max_d).rev() {
-        for wave in 0u8..=2 {
-            for node in &dag.nodes {
-                if node.depth == d && node.action.wave_order() == wave {
-                    valence::apply_deletion_node(node, system)
-                        .await
-                        .map_err(|e| map_err(kind, resource_id, operation, e))?;
-                    valence::read_cache::invalidate(&node.table, &node.record_id);
-                }
-            }
-        }
-    }
-    Ok(())
+        .map_err(|e| map_err(kind, resource_id, operation, e))
 }
 
+/// Tear down a `permission_group` row after explicit owner/member edge unrelate.
+///
+/// Valence's deletion DAG treats M2M `on_delete: Cascade` as peer-safe (no
+/// principal CascadeDelete) but does not emit `RemoveEdge` for Cascade M2M, so
+/// this helper still unrelates before `delete_record`. Prefer
+/// [`valence::delete_entity_now`] for permission / principal / domain rows.
 async fn delete_permission_group_row(
     system: &Valence,
     own_id: &str,
@@ -522,10 +468,14 @@ async fn delete_permission_group_row(
 /// Idempotent: a never-ensured or already-removed resource returns `Ok(())`. Never
 /// touches shared user principals, umbrella groups, or catalog `Create*` permissions.
 ///
+/// Deletes per-resource permissions, then the owners group, then the domain —
+/// the order required by `on_delete: Restrict` edges from permission → domain /
+/// `owners_group`. Allowed-principal M2M edges cascade with the permission rows.
+///
 /// Runs as System internally because `permission_domain` delete is Super-User-only
 /// (same elevation pattern as [`ensure_resource_permission_bundle`]). Physical
-/// deletes apply the Valence deletion DAG in Restrict-legal order inside this
-/// call so blockers are gone before the next step.
+/// deletes use [`valence::delete_entity_now`] (and a group-row edge teardown helper)
+/// so Restrict blockers are gone before the next step.
 ///
 /// # Errors
 ///
