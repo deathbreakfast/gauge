@@ -316,7 +316,6 @@ pub async fn principal_ref_from_record(
     rid: &RecordId,
     v: &Valence,
 ) -> anyhow::Result<Option<PrincipalRefDto>> {
-    let system = v;
     let principal_id = rid.id().to_string();
     if principal_id.is_empty() {
         return Ok(None);
@@ -324,25 +323,16 @@ pub async fn principal_ref_from_record(
 
     match principal_kind_from_record(rid) {
         Some(PrincipalKind::User) => {
-            let Some(principal) = get_user_principal_raw(&principal_id, system).await? else {
+            let Some(principal) = get_user_principal_raw(&principal_id, v).await? else {
                 return Ok(None);
             };
             let user_id = valence::extract_id_from_record(principal.user()).unwrap_or_default();
             if user_id.is_empty() {
                 return Ok(None);
             }
-            let lookup = v;
-            let label = match lepton::generated::User::get(&user_id, lookup).await? {
-                Some(u) => match u.primary_email() {
-                    Some(pid) => {
-                        let bare = valence::extract_id_from_record(pid).unwrap_or_default();
-                        lepton::generated::AccountEmail::get(&bare, lookup)
-                            .await?
-                            .map_or_else(|| user_id.clone(), |email| email.address().clone())
-                    }
-                    None => user_id.clone(),
-                },
-                None => user_id.clone(),
+            let label = match lepton::generated::User::get(&user_id, v).await {
+                Ok(Some(u)) => crate::search_sources::user_principal_label(&u, &user_id, v).await,
+                Ok(None) | Err(_) => user_id.clone(),
             };
             Ok(Some(PrincipalRefDto {
                 kind: PrincipalKind::User,
@@ -351,14 +341,14 @@ pub async fn principal_ref_from_record(
             }))
         }
         Some(PrincipalKind::Group) => {
-            let Some(principal) = get_group_principal_raw(&principal_id, system).await? else {
+            let Some(principal) = get_group_principal_raw(&principal_id, v).await? else {
                 return Ok(None);
             };
             let group_id = valence::extract_id_from_record(principal.group()).unwrap_or_default();
             if group_id.is_empty() {
                 return Ok(None);
             }
-            let label = get_group_raw(&group_id, system)
+            let label = get_group_raw(&group_id, v)
                 .await?
                 .map_or_else(|| group_id.clone(), |g| g.name().clone());
             Ok(Some(PrincipalRefDto {

@@ -80,6 +80,8 @@ pub struct PermissionDetailDto {
     /// Human-readable description.
     pub description: String,
     /// User id of the permission's creator.
+    ///
+    /// Empty for callers without `GaugeAdmin` (list and detail share this DTO).
     pub created_by_user_id: String,
     /// Id of the group that owns/administers this permission.
     pub owners_group_id: String,
