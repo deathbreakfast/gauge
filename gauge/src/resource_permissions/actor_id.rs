@@ -80,7 +80,7 @@ impl ActorId {
 
     /// Canonical bare user id when this is a [`Self::User`].
     #[must_use]
-    pub fn as_user_id(&self) -> Option<&str> {
+    pub const fn as_user_id(&self) -> Option<&str> {
         match self {
             Self::User(id) => Some(id.as_str()),
             Self::Service(_) => None,

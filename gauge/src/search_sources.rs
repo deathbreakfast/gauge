@@ -36,18 +36,14 @@ pub async fn user_principal_label(
     } else {
         user_id
     };
-    let display = match user.get_profile(v).await {
-        Ok(profiles) => profiles
+    let display = user.get_profile(v).await.ok().and_then(|profiles| {
+        profiles
             .into_iter()
             .next()
             .map(|p| p.display_name().trim().to_string())
-            .filter(|s| !s.is_empty()),
-        Err(_) => None,
-    };
-    match display {
-        Some(name) => format!("{name} ({short})"),
-        None => user_id.to_string(),
-    }
+            .filter(|s| !s.is_empty())
+    });
+    display.map_or_else(|| user_id.to_string(), |name| format!("{name} ({short})"))
 }
 
 /// [`uf_search_core::SearchSourceProvider`] searching users by display name / id.

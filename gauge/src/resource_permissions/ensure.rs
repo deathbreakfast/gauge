@@ -120,6 +120,7 @@ async fn add_owner_user(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // row identity + domain/owner/creator context
 async fn ensure_permission_row(
     system: &Valence,
     kind: &ResourceKindDescriptor,
@@ -373,8 +374,8 @@ where
     };
 
     let system = as_system(v, "ensure_resource_permission_bundle");
-    let dom_id = domain_id(&kind, &resource_id);
-    let own_id = owners_group_id(&kind, &resource_id);
+    let dom_id = domain_id(kind, &resource_id);
+    let own_id = owners_group_id(kind, &resource_id);
     let display = if display_name.trim().is_empty() {
         format!("{} {resource_id}", kind.display_label)
     } else {
@@ -455,8 +456,7 @@ async fn delete_entity_now(
         .backend_for_table(table)
         .map_err(|e| map_err(kind, resource_id, operation, e))?;
     match backend.delete_record(table, bare).await {
-        Ok(()) => {}
-        Err(valence::Error::NotFound(_)) => {}
+        Ok(()) | Err(valence::Error::NotFound(_)) => {}
         Err(e) => return Err(map_err(kind, resource_id, operation, e)),
     }
     valence::read_cache::invalidate(table, bare);
@@ -466,7 +466,7 @@ async fn delete_entity_now(
 /// Tear down a `permission_group` row after explicit owner/member edge unrelate.
 ///
 /// Valence's deletion DAG treats M2M `on_delete: Cascade` as peer-safe (no
-/// principal CascadeDelete) but does not emit `RemoveEdge` for Cascade M2M, so
+/// principal `CascadeDelete`) but does not emit `RemoveEdge` for Cascade M2M, so
 /// this helper still unrelates before `delete_record`. Prefer
 /// [`valence::delete_entity_now`] for permission / principal / domain rows.
 async fn delete_permission_group_row(
