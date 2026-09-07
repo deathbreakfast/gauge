@@ -475,6 +475,7 @@ async fn colliding_resource_ids_get_distinct_bundles() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // full ensure→assert→delete→idempotent teardown path
 async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> anyhow::Result<()> {
     let system = system_valence().await;
     seed_gluon_catalog(&system).await?;
