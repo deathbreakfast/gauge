@@ -77,6 +77,7 @@
 //! git consumers no longer need the variants. Until then, prefer
 //! [`ResourceKind::descriptor`] or a product descriptor over the enum itself.
 
+mod actor_id;
 mod default_groups;
 mod ensure;
 mod error;
@@ -87,6 +88,7 @@ mod policy;
 mod revoke_umbrella_grants;
 mod spec;
 
+pub use actor_id::ActorId;
 pub use default_groups::{seed_resource_kind_catalog, KindDefaultGroups};
 pub use ensure::{delete_resource_permission_bundle, ensure_resource_permission_bundle};
 pub use error::ResourcePermissionError;
@@ -95,9 +97,10 @@ pub use kinds::{
     ResourceAction, ResourceKind, ResourceKindDescriptor, UmbrellaPolicy,
 };
 pub use policy::{
-    ResourcePermissionPolicy, StaticPermissionGate, CREATE_GLUON_APPLICATIONS,
-    CREATE_GLUON_APP_SETS, CREATE_NEUTRINO_SECRETS, CREATE_NUCLEUS_STACKS, GLUON_APP_RESOURCE,
-    GLUON_APP_SET_RESOURCE, NEUTRINO_SECRET_RESOURCE, NUCLEUS_STACK_RESOURCE,
+    ParentResourceEditPolicy, ResourcePermissionPolicy, StaticPermissionGate,
+    CREATE_GLUON_APPLICATIONS, CREATE_GLUON_APP_SETS, CREATE_NEUTRINO_SECRETS,
+    CREATE_NUCLEUS_STACKS, GLUON_APP_RESOURCE, GLUON_APP_SET_RESOURCE, NEUTRINO_SECRET_RESOURCE,
+    NUCLEUS_STACK_RESOURCE,
 };
 pub use revoke_umbrella_grants::revoke_umbrella_grants;
 pub use spec::{ResourcePermissionBundle, ResourcePermissionSpec};

@@ -2,9 +2,9 @@
 //!
 //! [`crate::service::actor_can`] is **not** safe to call from a privacy rule:
 //! `permissions_named` uses typed `Permission::query`, which re-enters ORM
-//! privacy, and [`crate::super_user::actor_is_super_user`] elevates to System.
-//! Gauge's own rules already avoid that path — see the comment on
-//! `group_has_recursive_member` in [`crate::privacy_policies`].
+//! privacy. Prefer this module's raw walks instead. Gauge's own rules already
+//! avoid the typed path — see the comment on `group_has_recursive_member` in
+//! [`crate::privacy_policies`].
 //!
 //! # Caller obligation
 //!

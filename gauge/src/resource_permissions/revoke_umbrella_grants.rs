@@ -4,10 +4,13 @@
 //! to per-resource permissions. Deployments seeded under the old policy still carry those
 //! edges. This helper removes them without touching creators, catalog Create*, other kinds,
 //! or per-user grants.
+//!
+//! Callers must already be `Actor::System` (Chronon / bootstrap). This helper does **not**
+//! elevate a session Valence to System.
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use log::info;
-use valence::{Actor, Model, Valence};
+use valence::Model;
 
 use crate::generated::{Permission, PermissionGroupPrincipal};
 
@@ -15,23 +18,23 @@ use super::ResourceKindDescriptor;
 
 /// Revoke umbrella group grants from every permission whose name starts with `{kind.prefix}.`.
 ///
-/// Idempotent. Safe to re-run.
+/// Idempotent. Safe to re-run. Requires a System Valence actor (no mid-request elevate).
 ///
 /// # Errors
 ///
-/// Valence / Gauge failures bubble as [`anyhow::Error`].
+/// Returns an error when the caller is not System, or when Valence / Gauge fails.
 pub async fn revoke_umbrella_grants(
-    v: &Valence,
+    v: &valence::Valence,
     kind: impl Into<ResourceKindDescriptor>,
     group_ids: &[&str],
 ) -> anyhow::Result<usize> {
+    if !v.actor().is_system() {
+        bail!("revoke_umbrella_grants requires System actor (Chronon/bootstrap)");
+    }
     let kind = kind.into();
-    let system = v.with_actor(Actor::System {
-        operation: format!("revoke_umbrella_grants:{}", kind.prefix),
-    });
 
     let prefix = format!("{}.", kind.prefix);
-    let permissions = Permission::query(&system).await?;
+    let permissions = Permission::query(v).await?;
     let mut revoked = 0usize;
 
     for permission in permissions {
@@ -47,7 +50,7 @@ pub async fn revoke_umbrella_grants(
         };
 
         for group_id in group_ids {
-            if revoke_group_from_permission(&system, &perm_id, group_id).await? {
+            if revoke_group_from_permission(v, &perm_id, group_id).await? {
                 revoked += 1;
                 info!("[permission] revoked umbrella grant group={group_id} permission={name}");
             }
@@ -62,7 +65,7 @@ pub async fn revoke_umbrella_grants(
 }
 
 async fn revoke_group_from_permission(
-    system: &Valence,
+    system: &valence::Valence,
     permission_id: &str,
     group_id: &str,
 ) -> anyhow::Result<bool> {

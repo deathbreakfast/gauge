@@ -5,11 +5,18 @@ use std::fmt;
 /// Errors from [`super::ensure_resource_permission_bundle`] and [`super::seed_resource_kind_catalog`].
 #[derive(Debug)]
 pub enum ResourcePermissionError {
-    /// `maintainer_actor` was empty or not a usable user id.
+    /// Maintainer [`super::ActorId`] was missing or not a usable user id.
     MissingMaintainer {
         /// Resource kind label (e.g. `gluon_app`).
         kind: String,
         /// Caller-supplied resource id (safe identifier).
+        resource_id: String,
+    },
+    /// Session actor tried to name a different maintainer than themselves.
+    InvalidMaintainer {
+        /// Resource kind label.
+        kind: String,
+        /// Caller-supplied resource id.
         resource_id: String,
     },
     /// Resource id was empty or illegal after normalization.
@@ -35,7 +42,11 @@ impl fmt::Display for ResourcePermissionError {
         match self {
             Self::MissingMaintainer { kind, resource_id } => write!(
                 f,
-                "resource permission ensure requires maintainer_actor (kind={kind}, resource_id={resource_id})"
+                "resource permission ensure requires a user ActorId maintainer (kind={kind}, resource_id={resource_id})"
+            ),
+            Self::InvalidMaintainer { kind, resource_id } => write!(
+                f,
+                "resource permission maintainer must match the session user (kind={kind}, resource_id={resource_id})"
             ),
             Self::InvalidResourceId { kind } => {
                 write!(f, "invalid resource_id for kind={kind}")
@@ -89,8 +100,14 @@ mod tests {
             kind: "gluon_app".into(),
             resource_id: "app-1".into(),
         };
-        assert!(missing.to_string().contains("maintainer_actor"));
+        assert!(missing.to_string().contains("ActorId"));
         assert!(missing.source().is_none());
+
+        let invalid_maint = ResourcePermissionError::InvalidMaintainer {
+            kind: "gluon_app".into(),
+            resource_id: "app-1".into(),
+        };
+        assert!(invalid_maint.to_string().contains("session user"));
 
         let invalid = ResourcePermissionError::InvalidResourceId {
             kind: "gluon_app".into(),

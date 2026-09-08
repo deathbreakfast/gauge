@@ -3,7 +3,6 @@
 #![allow(missing_docs)]
 
 #[cfg(feature = "ssr")]
-use valence::Model;
 
 uf_product_macros::define_search_sources! {
     enum PermissionSearchSourceId {
@@ -22,7 +21,32 @@ uf_product_macros::define_search_sources! {
     }
 }
 
-/// [`uf_search_core::SearchSourceProvider`] searching users by email, for principal pickers.
+/// Label for a user principal: display name + short id suffix, never email.
+///
+/// Email addresses are owner-only in Valence; pickers must not call
+/// `AccountEmail::get` under viewer Valence.
+#[cfg(feature = "ssr")]
+pub async fn user_principal_label(
+    user: &lepton::generated::User,
+    user_id: &str,
+    v: &valence::Valence,
+) -> String {
+    let short = if user_id.len() > 6 {
+        &user_id[..6]
+    } else {
+        user_id
+    };
+    let display = user.get_profile(v).await.ok().and_then(|profiles| {
+        profiles
+            .into_iter()
+            .next()
+            .map(|p| p.display_name().trim().to_string())
+            .filter(|s| !s.is_empty())
+    });
+    display.map_or_else(|| user_id.to_string(), |name| format!("{name} ({short})"))
+}
+
+/// [`uf_search_core::SearchSourceProvider`] searching users by display name / id.
 #[cfg(feature = "ssr")]
 pub struct PlatformUserSearchSource;
 
@@ -46,25 +70,7 @@ impl uf_search_core::SearchSourceProvider for PlatformUserSearchSource {
                     .id()
                     .and_then(|t| valence::extract_id_from_record(t).ok())
                     .unwrap_or_default();
-                let title = match user.primary_email() {
-                    Some(pid) => {
-                        let bare = valence::extract_id_from_record(pid).unwrap_or_default();
-                        lepton::generated::AccountEmail::get(&bare, v)
-                            .await?
-                            .map_or_else(
-                                || id.clone(),
-                                |email| {
-                                    let address = email.address().clone();
-                                    if address.is_empty() {
-                                        id.clone()
-                                    } else {
-                                        address
-                                    }
-                                },
-                            )
-                    }
-                    None => id.clone(),
-                };
+                let title = user_principal_label(&user, &id, v).await;
                 if !query_lower.is_empty()
                     && !id.to_lowercase().contains(&query_lower)
                     && !title.to_lowercase().contains(&query_lower)

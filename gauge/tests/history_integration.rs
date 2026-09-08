@@ -8,7 +8,7 @@ use common::{seed_user, test_valence};
 use gauge::service;
 use gauge::types::PermissionGroupCreateInput;
 use record_history::RecordHistoryFields;
-use valence::Actor;
+use valence::{Actor, Model};
 
 #[tokio::test]
 async fn history_tracks_description_and_membership_changes() {
@@ -279,5 +279,72 @@ async fn actor_can_view_history_subject_denies_outsider_page_acl_sad() {
             .await
             .expect("outsider can-view check"),
         "outsider must fail history page ACL (actor_can_view_history_subject false → deny)"
+    );
+}
+
+/// SM-24: `list_history` must not return more than [`service::MAX_HISTORY_LIST_ROWS`]
+/// even when many history rows exist for one subject (DB-side `.limit`).
+#[tokio::test]
+async fn list_history_caps_at_max_history_list_rows() {
+    use gauge::generated::PermissionHistory;
+    use gauge::service::MAX_HISTORY_LIST_ROWS;
+
+    let system = test_valence(Actor::System {
+        operation: "permission_history_cap_setup".to_string(),
+    })
+    .await;
+
+    seed_user("owner", "owner@example.com", &system).await;
+    let owner_ctx = system.with_actor(Actor::User {
+        user_id: "owner".to_string(),
+    });
+
+    let group = service::create_group(
+        PermissionGroupCreateInput {
+            name: "Cap History Group".to_string(),
+            description: "seed".to_string(),
+        },
+        &owner_ctx,
+    )
+    .await
+    .expect("create group");
+    let group_id = group
+        .id()
+        .and_then(|t| valence::extract_id_from_record(t).ok())
+        .expect("group id");
+
+    let source = valence::RecordId::new("permission_group", &group_id);
+    let overflow = MAX_HISTORY_LIST_ROWS + 25;
+    for i in 0..overflow {
+        let row = PermissionHistory::new(
+            source.clone(),
+            "description".to_string(),
+            format!("old-{i}"),
+            format!("new-{i}"),
+            chrono::Utc::now(),
+            Some(valence::RecordId::new("user", "owner")),
+        )
+        .expect("history row");
+        PermissionHistory::create(row, &owner_ctx)
+            .await
+            .unwrap_or_else(|e| panic!("create history row {i}: {e}"));
+    }
+
+    let listed = service::list_history(
+        &owner_ctx,
+        Some("permission_group".to_string()),
+        Some(group_id),
+    )
+    .await
+    .expect("list history");
+    assert!(
+        listed.len() <= MAX_HISTORY_LIST_ROWS,
+        "list_history must hard-cap at {MAX_HISTORY_LIST_ROWS}, got {}",
+        listed.len()
+    );
+    assert_eq!(
+        listed.len(),
+        MAX_HISTORY_LIST_ROWS,
+        "expected full page of {MAX_HISTORY_LIST_ROWS} when more rows exist"
     );
 }

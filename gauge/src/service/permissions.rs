@@ -6,7 +6,7 @@ use crate::types::{
     HistoryDiffItemDto, PermissionCreateInput, PermissionDetailDto, PermissionGroupDetailDto,
 };
 
-use super::access::{can_edit_group, can_edit_permission, permission_allows_user};
+use super::access::{can_edit_group, can_edit_permission, has_permission, permission_allows_user};
 use super::helpers::{
     current_user_id, ensure_group_principal, ensure_user_principal, get_domain_raw, get_group_raw,
     get_permission_raw, get_user_by_actor_id, group_has_user, permissions_named,
@@ -297,6 +297,7 @@ pub async fn get_permission_detail(
     };
 
     let reveal_sensitive = can_edit_permission(&permission, v).await?;
+    let reveal_creator = has_permission(v, "GaugeAdmin").await?;
     let system = v;
 
     // Grant graph is editor-only. Outsiders still see the permission row
@@ -328,8 +329,12 @@ pub async fn get_permission_detail(
         id: record_pk_id(permission.id()),
         name: permission.name().clone(),
         description: permission.description().cloned().unwrap_or_default(),
-        created_by_user_id: valence::extract_id_from_record(permission.created_by())
-            .unwrap_or_default(),
+        // Creator id is GaugeAdmin-only (list + detail share this DTO).
+        created_by_user_id: if reveal_creator {
+            valence::extract_id_from_record(permission.created_by()).unwrap_or_default()
+        } else {
+            String::new()
+        },
         owners_group_id: valence::extract_id_from_record(permission.owners_group())
             .unwrap_or_default(),
         domain_id: record_pk_id(domain.id()),
