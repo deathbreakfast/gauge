@@ -2,6 +2,7 @@ use valence::prelude::*;
 
 valence_trait_schema! {
     HistorySource {
+        repository: "https://github.com/unified-field-dev/gauge",
         connections: [
             record_history: {
                 table: "trait:RecordHistory",

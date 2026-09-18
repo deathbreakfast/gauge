@@ -136,7 +136,7 @@ async fn seed_user(id: &str, email: &str, valence: &Valence) {
         now,
     )
     .expect("build user");
-    lepton::generated::User::upsert(id, user, valence)
+    lepton::generated::User::upsert_used(id, user, valence, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save User** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
         .await
         .expect("upsert user");
 }
@@ -145,7 +145,7 @@ async fn seed_super_user_owner(
     system: &Valence,
     now: chrono::DateTime<Utc>,
 ) -> PermissionUserPrincipal {
-    let super_group = PermissionGroup::upsert(
+    let super_group = PermissionGroup::upsert_used(
         SUPER_USER_GROUP_ID,
         PermissionGroup::new(
             SUPER_USER_GROUP_NAME.to_string(),
@@ -155,14 +155,16 @@ async fn seed_super_user_owner(
         )
         .expect("build super user group"),
         system,
+        valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
     )
     .await
     .expect("bootstrap super user group");
-    let owner_principal = PermissionUserPrincipal::upsert(
+    let owner_principal = PermissionUserPrincipal::upsert_used(
         "user:owner-1",
         PermissionUserPrincipal::new(RecordId::new("user", "owner-1"), "owner-1".into())
             .expect("owner principal"),
         system,
+        valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
     )
     .await
     .expect("upsert owner principal");
@@ -182,11 +184,12 @@ async fn seed_demo_permission(
     owner_principal: &PermissionUserPrincipal,
     now: chrono::DateTime<Utc>,
 ) -> (String, Permission) {
-    let owners = PermissionGroup::upsert(
+    let owners = PermissionGroup::upsert_used(
         "deployers",
         PermissionGroup::new("Deployers".into(), Some("demo owners".into()), now, now)
             .expect("owners group"),
         system,
+        valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
     )
     .await
     .expect("upsert owners");
@@ -195,7 +198,7 @@ async fn seed_demo_permission(
         .await
         .expect("owners owner");
 
-    let domain = PermissionDomain::upsert(
+    let domain = PermissionDomain::upsert_used(
         "demo-domain",
         PermissionDomain::new(
             false,
@@ -207,12 +210,13 @@ async fn seed_demo_permission(
         )
         .expect("domain"),
         system,
+        valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
     )
     .await
     .expect("upsert domain");
 
     let permission_name = "CanDeploy".to_string();
-    let permission = Permission::upsert(
+    let permission = Permission::upsert_used(
         "can-deploy",
         Permission::new(
             RecordId::new("user", "owner-1"),
@@ -225,6 +229,7 @@ async fn seed_demo_permission(
         )
         .expect("permission"),
         system,
+        valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
     )
     .await
     .expect("upsert permission");
@@ -256,11 +261,12 @@ async fn bootstrap_host() -> HostState {
         .expect("actor_can before grant");
     assert!(!denied, "member must be denied before grant");
 
-    let member_principal = PermissionUserPrincipal::upsert(
+    let member_principal = PermissionUserPrincipal::upsert_used(
         "user:member-1",
         PermissionUserPrincipal::new(RecordId::new("user", "member-1"), "member-1".into())
             .expect("member principal"),
         &system,
+        valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
     )
     .await
     .expect("upsert member principal");

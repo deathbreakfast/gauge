@@ -45,7 +45,7 @@ pub async fn create_group(
         now,
         now,
     )?;
-    let created = PermissionGroup::create(group, system).await?;
+    let created = PermissionGroup::create_used(group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
 
     let lookup = v;
     if let Some(user) = get_user_by_actor_id(&actor_user_id, lookup).await? {
@@ -105,7 +105,7 @@ pub async fn update_group(
     // get_mutable keeps record id for owner privacy policies (upsert of a new()
     // model without id fails GROUP_OWNER_RECURSIVE).
     let mut builder = existing
-        .get_mutable(v)
+        .get_mutable_used(v, valence::use_!(r"In **Gauge permissions**, we **update this data** so later steps see the latest values for this workflow. Callers allowed for **Gauge permissions** use the updated data; this is not a public export of unrelated fields."))
         .set_name(next_name)?
         .set_updated_at(Utc::now())?;
     builder = match desc {

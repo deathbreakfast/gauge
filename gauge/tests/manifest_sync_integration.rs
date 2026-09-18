@@ -108,7 +108,7 @@ async fn sync_permission_manifest_creates_rows_happy_path() -> anyhow::Result<()
         "manifest creates the permission row but does not grant outsiders"
     );
 
-    let named = gauge::generated::Permission::query(&system)
+    let named = gauge::generated::Permission::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_name(StringPredicate::Equals("GaugeTestManifestPerm".into()))
         .limit(1)
         .first()
@@ -153,7 +153,7 @@ async fn ensure_gluon_operator_groups_idempotent_happy_path() -> anyhow::Result<
     ensure_gluon_default_operator_groups(&system).await?;
     ensure_gluon_default_operator_groups(&system).await?;
 
-    let registry = gauge::generated::PermissionGroup::get("gluon_registry_operator", &system)
+    let registry = gauge::generated::PermissionGroup::get_used("gluon_registry_operator", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("gluon_registry_operator group");
     assert_eq!(registry.name(), "Gluon registry operator");
@@ -164,16 +164,17 @@ async fn ensure_gluon_operator_groups_idempotent_happy_path() -> anyhow::Result<
     });
 
     // Attach member under system: ensure-created groups have no human owner.
-    let user = lepton::generated::User::get("gluon_ops", &system)
+    let user = lepton::generated::User::get_used("gluon_ops", &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         "user:gluon_ops",
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             "gluon_ops".to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     registry
@@ -198,7 +199,7 @@ async fn ensure_gluon_operator_groups_before_manifest_skips_grants_sad() -> anyh
     // No panic / hard error: missing permission names are skipped with a warn.
     ensure_gluon_default_operator_groups(&system).await?;
 
-    let registry = gauge::generated::PermissionGroup::get("gluon_registry_operator", &system)
+    let registry = gauge::generated::PermissionGroup::get_used("gluon_registry_operator", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("group still created");
     assert_eq!(registry.name(), "Gluon registry operator");
@@ -207,16 +208,17 @@ async fn ensure_gluon_operator_groups_before_manifest_skips_grants_sad() -> anyh
     let early = system.with_actor(Actor::User {
         user_id: "early".to_string(),
     });
-    let user = lepton::generated::User::get("early", &system)
+    let user = lepton::generated::User::get_used("early", &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         "user:early",
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             "early".to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     registry

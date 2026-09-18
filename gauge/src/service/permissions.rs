@@ -66,7 +66,7 @@ pub async fn create_permission(
         now,
     )?;
 
-    let created = Permission::create(permission, system).await?;
+    let created = Permission::create_used(permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     Ok(created)
 }
 
@@ -112,7 +112,7 @@ pub async fn update_permission(
         description
     };
     let saved = existing
-        .get_mutable(v)
+        .get_mutable_used(v, valence::use_!(r"In **Gauge permissions**, we **update this data** so later steps see the latest values for this workflow. Callers allowed for **Gauge permissions** use the updated data; this is not a public export of unrelated fields."))
         .set_owners_group(next_owners_group_id)?
         .set_domain(domain_record_id)?
         .set_name(name)?
@@ -415,7 +415,7 @@ pub async fn list_permissions(
         .filter(|s| !s.is_empty());
 
     let mut out = Vec::new();
-    for permission in Permission::query(v).await? {
+    for permission in Permission::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await? {
         if let Some(ref needle) = needle {
             let name = permission.name().to_lowercase();
             let description = permission
@@ -448,7 +448,7 @@ pub async fn list_groups(
         .filter(|s| !s.is_empty());
 
     let mut out = Vec::new();
-    for group in PermissionGroup::query(v).await? {
+    for group in PermissionGroup::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await? {
         if let Some(ref needle) = needle {
             let name = group.name().to_lowercase();
             let description = group

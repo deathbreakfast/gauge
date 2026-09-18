@@ -6,6 +6,7 @@ use valence::privacy_policies::common::AUTHENTICATED;
 
 valence_schema! {
     Permission {
+        repository: "https://github.com/unified-field-dev/gauge",
         table: "permission",
         version: "0.1.0",
         database: crate::embedded_surreal::DEFAULT_STORAGE,

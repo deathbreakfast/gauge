@@ -4,6 +4,7 @@ use crate::privacy_policies::SUPER_USER_GROUP_MEMBER;
 
 valence_schema! {
     PermissionUserPrincipal {
+        repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_user_principal",
         version: "0.1.0",
         database: crate::embedded_surreal::DEFAULT_STORAGE,

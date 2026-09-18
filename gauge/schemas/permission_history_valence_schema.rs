@@ -3,6 +3,7 @@ use valence::prelude::*;
 
 valence_schema! {
     PermissionHistory {
+        repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_history",
         version: "0.2.2",
         database: crate::embedded_surreal::DEFAULT_STORAGE,

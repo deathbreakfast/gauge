@@ -80,19 +80,20 @@ async fn seed_resource_kind_catalog_gluon_idempotent_and_creator_holds_create() 
 
     // Grant creator membership in gluon.app.creators via service path: add as member.
     // Use System-related grant: add user to group members using generated relate after principal.
-    let group = gauge::generated::PermissionGroup::get("gluon.app.creators", &system)
+    let group = gauge::generated::PermissionGroup::get_used("gluon.app.creators", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("creators group");
-    let user = lepton::generated::User::get(creator, &system)
+    let user = lepton::generated::User::get_used(creator, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{creator}"),
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             creator.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     group
@@ -243,19 +244,20 @@ async fn default_groups_granted_on_view() -> anyhow::Result<()> {
     // Put viewer in nucleus.stack.viewers
     let viewer = "viewer_u5";
     seed_user(viewer, "viewer_u5@example.test", &system).await;
-    let group = gauge::generated::PermissionGroup::get("nucleus.stack.viewers", &system)
+    let group = gauge::generated::PermissionGroup::get_used("nucleus.stack.viewers", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("viewers");
-    let user = lepton::generated::User::get(viewer, &system)
+    let user = lepton::generated::User::get_used(viewer, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{viewer}"),
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             viewer.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     group
@@ -294,19 +296,20 @@ async fn resource_policy_allows_view_when_granted() -> anyhow::Result<()> {
     // Grant View to a user via owners Maintain path — put user in viewers group
     let viewer = "viewer_u7";
     seed_user(viewer, "viewer_u7@example.test", &system).await;
-    let group = gauge::generated::PermissionGroup::get("gluon.app.viewers", &system)
+    let group = gauge::generated::PermissionGroup::get_used("gluon.app.viewers", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("viewers");
-    let user = lepton::generated::User::get(viewer, &system)
+    let user = lepton::generated::User::get_used(viewer, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{viewer}"),
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             viewer.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     group
@@ -370,19 +373,20 @@ async fn neutrino_umbrella_grants_empty_operators_denied_without_per_secret_gran
 
     let operator = "ops_nu1";
     seed_user(operator, "ops_nu1@example.test", &system).await;
-    let group = gauge::generated::PermissionGroup::get("neutrino.secret.operators", &system)
+    let group = gauge::generated::PermissionGroup::get_used("neutrino.secret.operators", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("operators");
-    let user = lepton::generated::User::get(operator, &system)
+    let user = lepton::generated::User::get_used(operator, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{operator}"),
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             operator.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     group
@@ -443,22 +447,23 @@ async fn colliding_resource_ids_get_distinct_bundles() -> anyhow::Result<()> {
     // Grant stranger Reveal on A only.
     let reveal_a = a.name_for(ResourceAction::Reveal).unwrap().to_string();
     let reveal_b = b.name_for(ResourceAction::Reveal).unwrap().to_string();
-    let perm_a = gauge::generated::Permission::query(&system)
+    let perm_a = gauge::generated::Permission::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_name(valence::StringPredicate::Equals(reveal_a.clone()))
         .limit(1)
         .first()
         .await?
         .expect("perm a");
-    let user = lepton::generated::User::get(stranger, &system)
+    let user = lepton::generated::User::get_used(stranger, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{stranger}"),
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             stranger.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     perm_a
@@ -494,7 +499,7 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
     )
     .await?;
 
-    let domain = gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+    let domain = gauge::generated::PermissionDomain::get_used(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("domain");
     assert!(*domain.resource_scoped());
@@ -516,12 +521,12 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
 
     // Pre-delete: owners-group principal wrapper and owner edge exist.
     assert!(
-        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+        gauge::generated::PermissionGroupPrincipal::get_used(&owners_principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some(),
         "owners principal wrapper should exist before delete"
     );
-    let owners_group = gauge::generated::PermissionGroup::get(&bundle.owners_group_id, &system)
+    let owners_group = gauge::generated::PermissionGroup::get_used(&bundle.owners_group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("owners group");
     let owner_targets = owners_group.get_owners_record_ids(&system).await?;
@@ -532,7 +537,7 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
 
     // Pre-delete: each permission is granted to the owners group (allowed_principal edge).
     for perm_id in &permission_ids {
-        let perm = gauge::generated::Permission::get(perm_id, &system)
+        let perm = gauge::generated::Permission::get_used(perm_id, &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .expect("permission before delete");
         let allowed = perm.get_allowed_principals_record_ids(&system).await?;
@@ -544,24 +549,24 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
 
     delete_resource_permission_bundle(&system, ResourceKind::GluonApp, "app-del").await?;
     assert!(
-        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+        gauge::generated::PermissionDomain::get_used(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_none()
     );
     assert!(
-        gauge::generated::PermissionGroup::get(&bundle.owners_group_id, &system)
+        gauge::generated::PermissionGroup::get_used(&bundle.owners_group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_none()
     );
     assert!(
-        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+        gauge::generated::PermissionGroupPrincipal::get_used(&owners_principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_none(),
         "owners principal wrapper must be gone (colon-bearing PK)"
     );
     for perm_id in &permission_ids {
         assert!(
-            gauge::generated::Permission::get(perm_id, &system)
+            gauge::generated::Permission::get_used(perm_id, &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
                 .await?
                 .is_none(),
             "permission row {perm_id} should be gone"
@@ -570,7 +575,7 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
     for action in ResourceKind::GluonApp.default_actions() {
         let name = permission_name(ResourceKind::GluonApp, "app-del", action);
         assert!(
-            gauge::generated::Permission::query(&system)
+            gauge::generated::Permission::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
                 .where_name(valence::StringPredicate::Equals(name))
                 .limit(1)
                 .first()
@@ -582,18 +587,18 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
 
     // Shared user principal and umbrellas / catalog Create* survive.
     assert!(
-        gauge::generated::PermissionUserPrincipal::get(&maintainer_principal_id, &system)
+        gauge::generated::PermissionUserPrincipal::get_used(&maintainer_principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission User Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some(),
         "shared user principal must remain"
     );
     assert!(
-        gauge::generated::PermissionGroup::get("gluon.app.creators", &system)
+        gauge::generated::PermissionGroup::get_used("gluon.app.creators", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some()
     );
     assert!(
-        gauge::generated::Permission::get("rp_perm_create_gluon_applications", &system)
+        gauge::generated::Permission::get_used("rp_perm_create_gluon_applications", &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some()
     );
@@ -628,7 +633,7 @@ async fn delete_resource_permission_bundle_colon_resource_id() -> anyhow::Result
 
     let owners_principal_id = format!("permission_group:{}", bundle.owners_group_id);
     assert!(
-        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+        gauge::generated::PermissionGroupPrincipal::get_used(&owners_principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some()
     );
@@ -636,23 +641,23 @@ async fn delete_resource_permission_bundle_colon_resource_id() -> anyhow::Result
     delete_resource_permission_bundle(&system, ResourceKind::GluonApp, resource_id).await?;
 
     assert!(
-        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+        gauge::generated::PermissionDomain::get_used(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_none()
     );
     assert!(
-        gauge::generated::PermissionGroup::get(&bundle.owners_group_id, &system)
+        gauge::generated::PermissionGroup::get_used(&bundle.owners_group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_none()
     );
     assert!(
-        gauge::generated::PermissionGroupPrincipal::get(&owners_principal_id, &system)
+        gauge::generated::PermissionGroupPrincipal::get_used(&owners_principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_none(),
         "colon-bearing permission_group_principal id must delete cleanly"
     );
     assert!(
-        gauge::generated::PermissionUserPrincipal::get(&format!("user:{maintainer}"), &system)
+        gauge::generated::PermissionUserPrincipal::get_used(&format!("user:{maintainer}"), &system, valence::use_!(r"**Test:** Fixture **Permission User Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some(),
         "shared principal survives colon-id resource teardown"
@@ -680,7 +685,7 @@ async fn delete_resource_permission_bundle_tears_down_after_ensure() -> anyhow::
     .await?;
 
     assert!(
-        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+        gauge::generated::PermissionDomain::get_used(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some(),
         "domain must exist after ensure"
@@ -690,7 +695,7 @@ async fn delete_resource_permission_bundle_tears_down_after_ensure() -> anyhow::
     // Platform Restrict probes belong in Valence's delete_entity_now suite.
     delete_resource_permission_bundle(&system, ResourceKind::GluonApp, "app-restrict").await?;
     assert!(
-        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system)
+        gauge::generated::PermissionDomain::get_used(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_none(),
         "domain must be gone after bundle delete"
@@ -774,7 +779,7 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
     let mut groups = Vec::with_capacity(DEPTH);
     for i in 0..DEPTH {
         let gid = format!("nest_g{i}");
-        let g = gauge::generated::PermissionGroup::upsert(
+        let g = gauge::generated::PermissionGroup::upsert_used(
             &gid,
             gauge::generated::PermissionGroup::new(
                 format!("Nest {i}"),
@@ -783,19 +788,21 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
                 chrono::Utc::now(),
             )?,
             &system,
+            valence::use_!(r"**Test:** Fixture **Permission Group** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
         )
         .await?;
         groups.push(g);
     }
 
     for i in 0..DEPTH - 1 {
-        let child_principal = gauge::generated::PermissionGroupPrincipal::upsert(
+        let child_principal = gauge::generated::PermissionGroupPrincipal::upsert_used(
             &format!("permission_group:nest_g{}", i + 1),
             gauge::generated::PermissionGroupPrincipal::new(
                 groups[i + 1].id().expect("id").clone(),
                 format!("nest_g{}", i + 1),
             )?,
             &system,
+            valence::use_!(r"**Test:** Fixture **Permission Group Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
         )
         .await?;
         groups[i]
@@ -803,32 +810,34 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
             .await?;
     }
 
-    let member_user = lepton::generated::User::get(member, &system)
+    let member_user = lepton::generated::User::get_used(member, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("member");
-    let member_principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let member_principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{member}"),
         gauge::generated::PermissionUserPrincipal::new(
             member_user.id().expect("id").clone(),
             member.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     groups[DEPTH - 1]
         .relate_to_member_record(member_principal.id().expect("pid"), &system)
         .await?;
 
-    let outer_principal = gauge::generated::PermissionGroupPrincipal::upsert(
+    let outer_principal = gauge::generated::PermissionGroupPrincipal::upsert_used(
         "permission_group:nest_g0",
         gauge::generated::PermissionGroupPrincipal::new(
             groups[0].id().expect("id").clone(),
             "nest_g0".into(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    let perm = gauge::generated::Permission::query(&system)
+    let perm = gauge::generated::Permission::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_name(valence::StringPredicate::Equals(view.clone()))
         .limit(1)
         .first()
@@ -881,7 +890,7 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
     assert!(!gauge::actor_can_raw::actor_can_raw(&sv, &view).await?);
 
     // Cyclic group membership must terminate (visited set), not hang.
-    let g1 = gauge::generated::PermissionGroup::upsert(
+    let g1 = gauge::generated::PermissionGroup::upsert_used(
         "cycle_g1",
         gauge::generated::PermissionGroup::new(
             "Cycle 1".into(),
@@ -890,9 +899,10 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
             chrono::Utc::now(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    let g2 = gauge::generated::PermissionGroup::upsert(
+    let g2 = gauge::generated::PermissionGroup::upsert_used(
         "cycle_g2",
         gauge::generated::PermissionGroup::new(
             "Cycle 2".into(),
@@ -901,24 +911,27 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
             chrono::Utc::now(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    let p1 = gauge::generated::PermissionGroupPrincipal::upsert(
+    let p1 = gauge::generated::PermissionGroupPrincipal::upsert_used(
         "permission_group:cycle_g1",
         gauge::generated::PermissionGroupPrincipal::new(
             g1.id().expect("id").clone(),
             "cycle_g1".into(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    let p2 = gauge::generated::PermissionGroupPrincipal::upsert(
+    let p2 = gauge::generated::PermissionGroupPrincipal::upsert_used(
         "permission_group:cycle_g2",
         gauge::generated::PermissionGroupPrincipal::new(
             g2.id().expect("id").clone(),
             "cycle_g2".into(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     g1.relate_to_member_record(p2.id().expect("pid"), &system)
@@ -927,7 +940,7 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
         .await?;
     // Grant view to the cyclic group — stranger is not a member, so still deny,
     // but the walk must finish.
-    let perm = gauge::generated::Permission::query(&system)
+    let perm = gauge::generated::Permission::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_name(valence::StringPredicate::Equals(view.clone()))
         .limit(1)
         .first()
@@ -985,22 +998,23 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
         .to_string();
 
     // Simulate a pre-narrowing edge: grant operators on this secret's Reveal.
-    let perm = gauge::generated::Permission::query(&system)
+    let perm = gauge::generated::Permission::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_name(valence::StringPredicate::Equals(reveal.clone()))
         .limit(1)
         .first()
         .await?
         .expect("reveal perm");
-    let ops = gauge::generated::PermissionGroup::get("neutrino.secret.operators", &system)
+    let ops = gauge::generated::PermissionGroup::get_used("neutrino.secret.operators", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("operators");
-    let ops_principal = gauge::generated::PermissionGroupPrincipal::upsert(
+    let ops_principal = gauge::generated::PermissionGroupPrincipal::upsert_used(
         "permission_group:neutrino.secret.operators",
         gauge::generated::PermissionGroupPrincipal::new(
             ops.id().expect("id").clone(),
             "neutrino.secret.operators".into(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     perm.relate_to_allowed_principal_record(ops_principal.id().expect("pid"), &system)
@@ -1008,16 +1022,17 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
 
     let operator = "ops_rev";
     seed_user(operator, "ops_rev@example.test", &system).await;
-    let user = lepton::generated::User::get(operator, &system)
+    let user = lepton::generated::User::get_used(operator, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let user_principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let user_principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{operator}"),
         gauge::generated::PermissionUserPrincipal::new(
             user.id().expect("id").clone(),
             operator.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     ops.relate_to_member_record(user_principal.id().expect("pid"), &system)
@@ -1038,17 +1053,17 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
 
     // Catalog Create*, creators, and Gluon rows survive.
     assert!(
-        gauge::generated::Permission::get("rp_perm_create_neutrino_secrets", &system)
+        gauge::generated::Permission::get_used("rp_perm_create_neutrino_secrets", &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some()
     );
     assert!(
-        gauge::generated::PermissionGroup::get("neutrino.secret.creators", &system)
+        gauge::generated::PermissionGroup::get_used("neutrino.secret.creators", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some()
     );
     assert!(
-        gauge::generated::PermissionGroup::get("gluon.app.viewers", &system)
+        gauge::generated::PermissionGroup::get_used("gluon.app.viewers", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .is_some()
     );
@@ -1120,7 +1135,7 @@ async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()>
     assert!(!service::actor_can(&stranger_v, &maintain).await?);
 
     // Duplicate display-name group confers nothing.
-    let fake = gauge::generated::PermissionGroup::upsert(
+    let fake = gauge::generated::PermissionGroup::upsert_used(
         "fake_super_display_only",
         gauge::generated::PermissionGroup::new(
             gauge::super_user::SUPER_USER_GROUP_NAME.to_string(),
@@ -1129,18 +1144,20 @@ async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()>
             chrono::Utc::now(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    let stranger_user = lepton::generated::User::get(stranger, &system)
+    let stranger_user = lepton::generated::User::get_used(stranger, &system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("user");
-    let stranger_principal = gauge::generated::PermissionUserPrincipal::upsert(
+    let stranger_principal = gauge::generated::PermissionUserPrincipal::upsert_used(
         &format!("user:{stranger}"),
         gauge::generated::PermissionUserPrincipal::new(
             stranger_user.id().expect("id").clone(),
             stranger.to_string(),
         )?,
         &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
     fake.relate_to_member_record(stranger_principal.id().expect("pid"), &system)

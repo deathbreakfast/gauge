@@ -37,7 +37,7 @@ pub async fn get_user_by_actor_id(
 ) -> anyhow::Result<Option<lepton::generated::User>> {
     let lookup = system;
     for candidate in user_id_candidates(user_id) {
-        if let Some(user) = lepton::generated::User::get(&candidate, lookup).await? {
+        if let Some(user) = lepton::generated::User::get_used(&candidate, lookup, valence::use_!(r"In **Gauge permissions**, we **load User** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
             return Ok(Some(user));
         }
     }
@@ -108,7 +108,7 @@ pub async fn raw_table_rows(table: &str, v: &Valence) -> anyhow::Result<Vec<serd
 pub async fn permissions_named(name: &str, v: &Valence) -> anyhow::Result<Vec<Permission>> {
     use valence::StringPredicate;
 
-    Permission::query(v)
+    Permission::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(name.to_string()))
         .await
         .map_err(|e| anyhow::anyhow!("query permission by name: {e}"))
@@ -118,7 +118,7 @@ pub async fn permissions_named(name: &str, v: &Valence) -> anyhow::Result<Vec<Pe
 pub async fn groups_named(name: &str, v: &Valence) -> anyhow::Result<Vec<PermissionGroup>> {
     use valence::StringPredicate;
 
-    PermissionGroup::query(v)
+    PermissionGroup::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(name.to_string()))
         .await
         .map_err(|e| anyhow::anyhow!("query permission_group by name: {e}"))
@@ -275,7 +275,7 @@ pub async fn ensure_user_principal(
     system: &Valence,
 ) -> anyhow::Result<PermissionUserPrincipal> {
     let lookup = system;
-    let user = lepton::generated::User::get(user_id, lookup)
+    let user = lepton::generated::User::get_used(user_id, lookup, valence::use_!(r"In **Gauge permissions**, we **load User** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await?
         .ok_or_else(|| anyhow::anyhow!("User not found: {user_id}"))?;
     let user_thing = user
@@ -288,7 +288,7 @@ pub async fn ensure_user_principal(
     }
 
     let principal = PermissionUserPrincipal::new(user_thing, canonical_user_id(user_id))?;
-    Ok(PermissionUserPrincipal::upsert(&principal_id, principal, lookup).await?)
+    Ok(PermissionUserPrincipal::upsert_used(&principal_id, principal, lookup, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?)
 }
 
 pub async fn ensure_group_principal(
@@ -309,7 +309,7 @@ pub async fn ensure_group_principal(
     }
 
     let principal = PermissionGroupPrincipal::new(group_thing, group_id.to_string())?;
-    Ok(PermissionGroupPrincipal::upsert(&principal_id, principal, lookup).await?)
+    Ok(PermissionGroupPrincipal::upsert_used(&principal_id, principal, lookup, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?)
 }
 
 pub async fn principal_ref_from_record(
@@ -330,7 +330,7 @@ pub async fn principal_ref_from_record(
             if user_id.is_empty() {
                 return Ok(None);
             }
-            let label = match lepton::generated::User::get(&user_id, v).await {
+            let label = match lepton::generated::User::get_used(&user_id, v, valence::use_!(r"In **Gauge permissions**, we **load User** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await {
                 Ok(Some(u)) => crate::search_sources::user_principal_label(&u, &user_id, v).await,
                 Ok(None) | Err(_) => user_id.clone(),
             };
@@ -419,7 +419,7 @@ pub async fn resolve_or_create_default_owner_group(
         now,
         now,
     )?;
-    let created = PermissionGroup::upsert(&group_id, group, system).await?;
+    let created = PermissionGroup::upsert_used(&group_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     if let Some(user) = get_user_by_actor_id(user_id, system).await? {
         let principal = ensure_user_principal(&record_pk_id(user.id()), system).await?;
         created

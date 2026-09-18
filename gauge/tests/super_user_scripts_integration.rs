@@ -50,7 +50,7 @@ async fn ensure_super_user_group_script_is_idempotent_and_sync_seeds_roles() -> 
     ensure_super_user_group(&system_ctx(&system, "ensure_super_2")).await?;
     resync_eligible_super_user_group_members(&system_ctx(&system, "sync_super_roles")).await?;
 
-    let groups = PermissionGroup::query(&system)
+    let groups = PermissionGroup::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission Group** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_name(StringPredicate::Equals(SUPER_USER_GROUP_NAME.to_string()))
         .await?;
     assert_eq!(
@@ -67,7 +67,7 @@ async fn ensure_super_user_group_script_is_idempotent_and_sync_seeds_roles() -> 
             continue;
         }
         if let Some(principal) =
-            gauge::generated::PermissionUserPrincipal::get(&principal_id, &system).await?
+            gauge::generated::PermissionUserPrincipal::get_used(&principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission User Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?
         {
             if let Ok(user_id) = valence::extract_id_from_record(principal.user()) {
                 owner_ids.push(user_id);
@@ -81,7 +81,7 @@ async fn ensure_super_user_group_script_is_idempotent_and_sync_seeds_roles() -> 
             continue;
         }
         if let Some(principal) =
-            gauge::generated::PermissionUserPrincipal::get(&principal_id, &system).await?
+            gauge::generated::PermissionUserPrincipal::get_used(&principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission User Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?
         {
             if let Ok(user_id) = valence::extract_id_from_record(principal.user()) {
                 member_ids.push(user_id);
@@ -117,6 +117,58 @@ async fn seed_super_user_member_by_email_rejects_unknown_email_sad() -> anyhow::
         members.is_empty(),
         "failed email seed must not invent membership: {members:?}"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn seed_super_user_members_from_emails_seeds_known_and_soft_fails_missing(
+) -> anyhow::Result<()> {
+    let system = test_system_valence().await;
+    seed_user_with("u_ops", "ops@example.com", true, &system).await;
+    seed_user_with("u_second", "second@example.com", true, &system).await;
+
+    let group = ensure_super_user_group(&system_ctx(&system, "ensure_for_multi")).await?;
+    let stats = gauge::super_user::seed_super_user_members_from_emails(
+        &system_ctx(&system, "seed_multi"),
+        &group,
+        &[
+            "ops@example.com".into(),
+            "nobody@example.test".into(),
+            "second@example.com".into(),
+        ],
+    )
+    .await?;
+
+    assert_eq!(stats.configured, 3);
+    assert_eq!(stats.seeded, 2);
+    assert_eq!(stats.missing_user, 1);
+    assert_eq!(stats.failed, 0);
+
+    let mut member_ids = Vec::new();
+    for rid in group.get_members_record_ids(&system).await? {
+        let principal_id = rid.id().to_string();
+        if let Some(principal) =
+            gauge::generated::PermissionUserPrincipal::get_used(&principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission User Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?
+        {
+            if let Ok(user_id) = valence::extract_id_from_record(principal.user()) {
+                member_ids.push(user_id);
+            }
+        }
+    }
+    assert!(member_ids.contains(&"u_ops".to_string()));
+    assert!(member_ids.contains(&"u_second".to_string()));
+
+    // Idempotent second pass: still seeded, no failures.
+    let again = gauge::super_user::seed_super_user_members_from_emails(
+        &system_ctx(&system, "seed_multi_again"),
+        &group,
+        &["ops@example.com".into()],
+    )
+    .await?;
+    assert_eq!(again.seeded, 1);
+    assert_eq!(again.missing_user, 0);
+    assert_eq!(again.failed, 0);
 
     Ok(())
 }

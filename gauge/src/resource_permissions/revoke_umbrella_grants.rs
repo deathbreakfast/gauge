@@ -34,7 +34,7 @@ pub async fn revoke_umbrella_grants(
     let kind = kind.into();
 
     let prefix = format!("{}.", kind.prefix);
-    let permissions = Permission::query(v).await?;
+    let permissions = Permission::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await?;
     let mut revoked = 0usize;
 
     for permission in permissions {
@@ -69,11 +69,11 @@ async fn revoke_group_from_permission(
     permission_id: &str,
     group_id: &str,
 ) -> anyhow::Result<bool> {
-    let Some(permission) = Permission::get(permission_id, system).await? else {
+    let Some(permission) = Permission::get_used(permission_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? else {
         return Ok(false);
     };
     let principal_id = format!("permission_group:{group_id}");
-    let Some(principal) = PermissionGroupPrincipal::get(&principal_id, system).await? else {
+    let Some(principal) = PermissionGroupPrincipal::get_used(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? else {
         return Ok(false);
     };
     let Some(group_principal_rid) = principal.id().cloned() else {

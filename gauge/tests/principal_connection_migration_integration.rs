@@ -250,6 +250,44 @@ async fn migration_fails_when_legacy_user_edge_targets_missing_user_sad() -> any
     Ok(())
 }
 
+// Creates the super-user group and adds "super" as owner/member. Split out
+// of `super_user_review_queue_hidden_but_direct_approval_allowed` to keep
+// that test under clippy's too_many_lines limit.
+async fn seed_super_user_group(system: &Valence) -> anyhow::Result<()> {
+    let super_group = gauge::generated::PermissionGroup::upsert_used(
+        "super_user_group",
+        gauge::generated::PermissionGroup::new(
+            SUPER_USER_GROUP_NAME.to_string(),
+            Some("super users".to_string()),
+            Utc::now(),
+            Utc::now(),
+        )?,
+        system,
+        valence::use_!(r"**Test:** Fixture **Permission Group** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    let super_user = lepton::generated::User::get_used("super", system, valence::use_!(r"**Test:** Fixture **User** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?
+        .expect("super user exists");
+    let super_principal = gauge::generated::PermissionUserPrincipal::upsert_used(
+        "user:super",
+        gauge::generated::PermissionUserPrincipal::new(
+            super_user.id().expect("super id exists").clone(),
+            "super".to_string(),
+        )?,
+        system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    super_group
+        .relate_to_owner_record(super_principal.id().expect("principal id exists"), system)
+        .await?;
+    super_group
+        .relate_to_member_record(super_principal.id().expect("principal id exists"), system)
+        .await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn super_user_review_queue_hidden_but_direct_approval_allowed() -> anyhow::Result<()> {
     let system = harness_valence(Actor::System {
@@ -271,36 +309,7 @@ async fn super_user_review_queue_hidden_but_direct_approval_allowed() -> anyhow:
         user_id: "super".to_string(),
     });
 
-    // Create super-user group and add "super" as owner/member.
-    let super_group = gauge::generated::PermissionGroup::upsert(
-        "super_user_group",
-        gauge::generated::PermissionGroup::new(
-            SUPER_USER_GROUP_NAME.to_string(),
-            Some("super users".to_string()),
-            Utc::now(),
-            Utc::now(),
-        )?,
-        &system,
-    )
-    .await?;
-    let super_user = lepton::generated::User::get("super", &system)
-        .await?
-        .expect("super user exists");
-    let super_principal = gauge::generated::PermissionUserPrincipal::upsert(
-        "user:super",
-        gauge::generated::PermissionUserPrincipal::new(
-            super_user.id().expect("super id exists").clone(),
-            "super".to_string(),
-        )?,
-        &system,
-    )
-    .await?;
-    super_group
-        .relate_to_owner_record(super_principal.id().expect("principal id exists"), &system)
-        .await?;
-    super_group
-        .relate_to_member_record(super_principal.id().expect("principal id exists"), &system)
-        .await?;
+    seed_super_user_group(&system).await?;
 
     let owners_group = service::create_group(
         PermissionGroupCreateInput {

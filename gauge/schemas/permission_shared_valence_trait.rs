@@ -2,6 +2,7 @@ use valence::prelude::*;
 
 valence_trait_schema! {
     PermissionShared {
+        repository: "https://github.com/unified-field-dev/gauge",
         fields: [
             name: {
                 r#type: FieldType::String,

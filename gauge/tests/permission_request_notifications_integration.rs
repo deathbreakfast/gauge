@@ -30,7 +30,7 @@ async fn permission_request_notifications_for_user(
     let lookup = v.with_actor(Actor::System {
         operation: "gauge_notification_test_query".to_string(),
     });
-    let rows = uf_notifications_core::generated::Notification::query(&lookup)
+    let rows = uf_notifications_core::generated::Notification::query_used(&lookup, valence::use_!(r"**Test:** Fixture **Notification** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_user(RecordPredicate::Equals(RecordId::new("user", user_id)))
         .where_kind(StringPredicate::Equals("permission_request".to_string()))
         .order_by_created_at(SortDirection::Desc)

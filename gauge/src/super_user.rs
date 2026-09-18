@@ -58,7 +58,7 @@ async fn ensure_user_principal(
             .ok_or_else(|| anyhow::anyhow!("user id missing after persist"))?,
     )?;
     let principal_id = user_principal_id(&user_id);
-    if let Some(existing) = PermissionUserPrincipal::get(&principal_id, system).await? {
+    if let Some(existing) = PermissionUserPrincipal::get_used(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
         return Ok(existing);
     }
     let principal = PermissionUserPrincipal::new(
@@ -67,7 +67,7 @@ async fn ensure_user_principal(
             .clone(),
         canonical_user_id(&user_id),
     )?;
-    Ok(PermissionUserPrincipal::upsert(&principal_id, principal, system).await?)
+    Ok(PermissionUserPrincipal::upsert_used(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?)
 }
 
 /// `true` when the request actor is a system actor or a (possibly transitive) member
@@ -118,7 +118,7 @@ pub async fn ensure_super_user_group(system: &Valence) -> anyhow::Result<Permiss
     }
 
     let now = Utc::now();
-    let created = PermissionGroup::upsert(
+    let created = PermissionGroup::upsert_used(
         SUPER_USER_GROUP_ID,
         PermissionGroup::new(
             SUPER_USER_GROUP_NAME.to_string(),
@@ -127,6 +127,7 @@ pub async fn ensure_super_user_group(system: &Valence) -> anyhow::Result<Permiss
             now,
         )?,
         system,
+        valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
     )
     .await?;
     warn_duplicate_super_user_name_groups(system).await?;
@@ -134,7 +135,7 @@ pub async fn ensure_super_user_group(system: &Valence) -> anyhow::Result<Permiss
 }
 
 async fn warn_duplicate_super_user_name_groups(system: &Valence) -> anyhow::Result<()> {
-    let groups = PermissionGroup::query(system)
+    let groups = PermissionGroup::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(SUPER_USER_GROUP_NAME.to_string()))
         .await?;
     let foreign = groups
@@ -168,10 +169,10 @@ async fn sync_eligible_roles_into_super_group(
     system: &Valence,
     super_group: &PermissionGroup,
 ) -> anyhow::Result<()> {
-    let role_memberships = lepton::generated::AccountMembership::query(system)
+    let role_memberships = lepton::generated::AccountMembership::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Account Membership** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_role(StringPredicate::Equals("owner".to_string()))
         .union(
-            lepton::generated::AccountMembership::query(system)
+            lepton::generated::AccountMembership::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Account Membership** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
                 .where_role(StringPredicate::Equals("super_admin".to_string())),
         )
         .await?;
@@ -192,14 +193,32 @@ pub async fn seed_super_user_members_from_roles(
     sync_eligible_roles_into_super_group(system, super_group).await
 }
 
+/// Counts from a best-effort multi-email Super User seed pass.
+///
+/// Hosts log these fields (never the email list) after boot bootstrap.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SuperUserSeedStats {
+    /// Number of email addresses supplied to the seed call.
+    pub configured: usize,
+    /// Addresses that resolved to a Lepton user and were ensured as members.
+    pub seeded: usize,
+    /// Addresses with no matching Lepton user (safe to retry after signup).
+    pub missing_user: usize,
+    /// Addresses that failed for another reason (Valence / relate errors).
+    pub failed: usize,
+}
+
 /// Add the user with the given `email` to `super_group` as both owner and member.
-/// Errors if no user matches `email`.
+///
+/// # Errors
+///
+/// Returns when no Lepton user matches `email`, or when principal / relate writes fail.
 pub async fn seed_super_user_member_by_email(
     system: &Valence,
     super_group: &PermissionGroup,
     email: &str,
 ) -> anyhow::Result<()> {
-    let email_rows = lepton::generated::AccountEmail::query(system)
+    let email_rows = lepton::generated::AccountEmail::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Account Email** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_address(StringPredicate::Equals(email.to_string()))
         .await?;
     if email_rows.is_empty() {
@@ -209,7 +228,7 @@ pub async fn seed_super_user_member_by_email(
         let Some(email_id) = row.id().cloned() else {
             continue;
         };
-        let Some(user) = lepton::generated::User::query(system)
+        let Some(user) = lepton::generated::User::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list User** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
             .where_primary_email(valence::RecordPredicate::Equals(email_id))
             .first()
             .await?
@@ -219,6 +238,63 @@ pub async fn seed_super_user_member_by_email(
         ensure_user_in_super_group(super_group, &user, system).await?;
     }
     Ok(())
+}
+
+/// Idempotently seed every address in `emails` into `super_group`.
+///
+/// Missing users increment [`SuperUserSeedStats::missing_user`] and do not abort the
+/// batch (host boot can restart after signup). Other failures increment `failed`.
+///
+/// # Errors
+///
+/// This helper does not return soft missing-user failures. It only returns when a
+/// caller-supplied invariant breaks before the loop (today: never — always `Ok`).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use gauge::super_user::{
+///     ensure_super_user_group, seed_super_user_members_from_emails,
+/// };
+///
+/// let group = ensure_super_user_group(system).await?;
+/// let stats = seed_super_user_members_from_emails(
+///     system,
+///     &group,
+///     &["ops@example.com".into()],
+/// )
+/// .await?;
+/// assert_eq!(stats.configured, 1);
+/// ```
+pub async fn seed_super_user_members_from_emails(
+    system: &Valence,
+    super_group: &PermissionGroup,
+    emails: &[String],
+) -> anyhow::Result<SuperUserSeedStats> {
+    let mut stats = SuperUserSeedStats {
+        configured: emails.len(),
+        ..SuperUserSeedStats::default()
+    };
+    for email in emails {
+        let trimmed = email.trim();
+        if trimmed.is_empty() {
+            stats.missing_user += 1;
+            continue;
+        }
+        match seed_super_user_member_by_email(system, super_group, trimmed).await {
+            Ok(()) => stats.seeded += 1,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("no user found for email") {
+                    stats.missing_user += 1;
+                } else {
+                    stats.failed += 1;
+                    log::warn!("[gauge] super_user email seed failed (details redacted)");
+                }
+            }
+        }
+    }
+    Ok(stats)
 }
 
 async fn ensure_user_in_super_group(

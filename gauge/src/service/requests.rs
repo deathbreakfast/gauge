@@ -123,7 +123,7 @@ pub async fn create_permission_request(
         now,
         now,
     )?;
-    let created = PermissionRequest::create(request, system).await?;
+    let created = PermissionRequest::create_used(request, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Request** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     request_row_from_model(&created, v).await
 }
 
@@ -136,7 +136,7 @@ pub async fn list_permission_requests_for_actor(
         return Ok(Vec::new());
     };
     let lookup = v;
-    let rows = PermissionRequest::query(lookup)
+    let rows = PermissionRequest::query_used(lookup, valence::use_!(r"In **Gauge permissions**, we **list Permission Request** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_requestor(valence::RecordPredicate::Equals(require_model_id(
             requestor.id(),
             "requestor",
@@ -163,7 +163,7 @@ pub async fn list_permission_requests_for_review(
     }
 
     let lookup = v;
-    let rows = PermissionRequest::query(lookup)
+    let rows = PermissionRequest::query_used(lookup, valence::use_!(r"In **Gauge permissions**, we **list Permission Request** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_status(valence::StringPredicate::Equals("PENDING".to_string()))
         .order_by_created_at(valence::SortDirection::Desc)
         .await?;
@@ -238,7 +238,7 @@ pub async fn decide_permission_request(
 
     let write = v;
     request
-        .get_mutable(write)
+        .get_mutable_used(write, valence::use_!(r"In **Gauge permissions**, we **update this data** so later steps see the latest values for this workflow. Callers allowed for **Gauge permissions** use the updated data; this is not a public export of unrelated fields."))
         .set_approver(require_model_id(approver.id(), "approver")?)?
         .set_status(new_status)?
         .set_updated_at(Utc::now())?
@@ -285,7 +285,7 @@ pub async fn list_history(
     let _actor_user_id = require_user_id(v)?;
     let lookup = v;
     let mut query =
-        PermissionHistory::query(lookup).order_by_changed_at(valence::SortDirection::Desc);
+        PermissionHistory::query_used(lookup, valence::use_!(r"In **Gauge permissions**, we **list Permission History** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).order_by_changed_at(valence::SortDirection::Desc);
     if let (Some(ref want_kind), Some(ref want_id)) = (&subject_kind, &subject_id) {
         if !want_kind.is_empty() && !want_id.is_empty() {
             query = query.where_source(valence::RecordPredicate::Equals(valence::RecordId::new(

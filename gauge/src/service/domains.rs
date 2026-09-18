@@ -34,7 +34,7 @@ pub async fn create_domain(
         now,
     )?;
     let system = v;
-    let created = PermissionDomain::create(domain, system).await?;
+    let created = PermissionDomain::create_used(domain, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     Ok(created)
 }
 
