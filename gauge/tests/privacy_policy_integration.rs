@@ -131,9 +131,14 @@ async fn permission_group_policy_allows_owner_denies_non_owner_tm_sec_01_02() ->
     let schema = SchemaRegistry::global()
         .get_schema("permission_group")
         .expect("permission_group schema registered");
-    let raw = QueryCore::get_record_json("permission_group", group_id, &system)
-        .await?
-        .expect("group record");
+    let raw = QueryCore::get_record_json_used(
+        "permission_group",
+        group_id,
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `privacy_policy_integration` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await?
+    .expect("group record");
 
     let owner_v = user_ctx(&system, owner_user);
     let non_owner_v = user_ctx(&system, non_owner_user);
@@ -230,9 +235,14 @@ async fn permission_policy_enforces_model_mutation_paths_tm_sec_01_02() -> anyho
     let schema = SchemaRegistry::global()
         .get_schema("permission")
         .expect("permission schema");
-    let raw = QueryCore::get_record_json("permission", "perm_policy_2", &system)
-        .await?
-        .expect("permission record");
+    let raw = QueryCore::get_record_json_used(
+        "permission",
+        "perm_policy_2",
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `privacy_policy_integration` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await?
+    .expect("permission record");
     PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Delete, &raw, &owner_v)
         .await
         .expect("TM-SEC-01 owner Valence delete allowed");
@@ -346,9 +356,14 @@ async fn permission_history_update_delete_peer_denied_owner_allowed() -> anyhow:
     let schema = SchemaRegistry::global()
         .get_schema("permission_history")
         .expect("permission_history schema registered");
-    let raw = QueryCore::get_record_json("permission_history", record_id, &system)
-        .await?
-        .expect("history record exists");
+    let raw = QueryCore::get_record_json_used(
+        "permission_history",
+        record_id,
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `privacy_policy_integration` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await?
+    .expect("history record exists");
 
     assert_privacy_denied(
         PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Update, &raw, &outsider_v)
@@ -431,9 +446,14 @@ async fn super_user_can_update_delete_permission_history_via_parent_happy() -> a
     let schema = SchemaRegistry::global()
         .get_schema("permission_history")
         .expect("permission_history schema registered");
-    let raw = QueryCore::get_record_json("permission_history", record_id, &system)
-        .await?
-        .expect("history record exists");
+    let raw = QueryCore::get_record_json_used(
+        "permission_history",
+        record_id,
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `privacy_policy_integration` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await?
+    .expect("history record exists");
     let super_user_v = user_ctx(&system, super_user);
 
     PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Update, &raw, &super_user_v)
@@ -477,9 +497,14 @@ async fn permission_request_update_maintainer_only_tm_sec_05() -> anyhow::Result
     let schema = SchemaRegistry::global()
         .get_schema("permission_request")
         .expect("permission_request schema registered");
-    let raw = QueryCore::get_record_json("permission_request", &request.id, &system)
-        .await?
-        .expect("request record");
+    let raw = QueryCore::get_record_json_used(
+        "permission_request",
+        &request.id,
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `privacy_policy_integration` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await?
+    .expect("request record");
 
     PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Update, &raw, &owner_v)
         .await
@@ -543,9 +568,14 @@ async fn permission_history_read_defers_to_parent_read_tm_sec_04() -> anyhow::Re
     let schema = SchemaRegistry::global()
         .get_schema("permission_history")
         .expect("permission_history schema registered");
-    let raw = QueryCore::get_record_json("permission_history", record_id, &system)
-        .await?
-        .expect("history record exists");
+    let raw = QueryCore::get_record_json_used(
+        "permission_history",
+        record_id,
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `privacy_policy_integration` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await?
+    .expect("history record exists");
     let peer_v = user_ctx(&system, "peer_reader");
 
     // Parent group Read is AUTHENTICATED — Valence floor widens; list_history still filters.
@@ -567,9 +597,14 @@ async fn session_owner_walk_reads_principals_without_system_tm_sec_08() -> anyho
     let schema = SchemaRegistry::global()
         .get_schema("permission_group")
         .expect("permission_group schema");
-    let raw = QueryCore::get_record_json("permission_group", group_id, &system)
-        .await?
-        .expect("group");
+    let raw = QueryCore::get_record_json_used(
+        "permission_group",
+        group_id,
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `privacy_policy_integration` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await?
+    .expect("group");
 
     PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Update, &raw, &owner_v)
         .await

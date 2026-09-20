@@ -476,10 +476,15 @@ async fn delete_permission_group_row(
     resource_id: &str,
 ) -> Result<(), ResourcePermissionError> {
     let record_id = own_id.trim();
-    if valence::query::QueryCore::get_record_json("permission_group", record_id, system)
-        .await
-        .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?
-        .is_none()
+    if valence::query::QueryCore::get_record_json_used(
+        "permission_group",
+        record_id,
+        system,
+        valence::use_!(r#"When Gauge finishes removing owners and members from a **permission group**, we **load that group row once** to see whether it still exists before deleting it. The app uses this only to decide whether cleanup should continue; the row is not shown to a user on this path."#),
+    )
+    .await
+    .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?
+    .is_none()
     {
         return Ok(());
     }

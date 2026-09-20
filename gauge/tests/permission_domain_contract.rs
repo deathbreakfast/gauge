@@ -1077,10 +1077,15 @@ async fn authenticated_user_cannot_mutate_domain_via_valence_sad() {
     let schema = SchemaRegistry::global()
         .get_schema("permission_domain")
         .expect("permission_domain schema registered");
-    let raw = valence::QueryCore::get_record_json("permission_domain", &domain_id, &system)
-        .await
-        .expect("load domain json")
-        .expect("domain row");
+    let raw = valence::QueryCore::get_record_json_used(
+        "permission_domain",
+        &domain_id,
+        &system,
+        valence::use_!(r#"**Test:** Fixture row load for `permission_domain_contract` so the suite can assert Valence privacy policy allow and deny outcomes. CI and developers running the suite only."#),
+    )
+    .await
+    .expect("load domain json")
+    .expect("domain row");
 
     let update_allowed = PrivacyEvaluator::check_entity_access(
         schema,
