@@ -55,10 +55,10 @@ pub async fn create_group(
         let principal = ensure_user_principal(&record_pk_id(user.id()), lookup).await?;
         let principal_id = require_model_id(principal.id(), "principal")?;
         created
-            .relate_to_owner_record(&principal_id, lookup)
+            .relate_to_owner_record_used(&principal_id, lookup, valence::use_!(r#"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."#))
             .await?;
         created
-            .relate_to_member_record(&principal_id, lookup)
+            .relate_to_member_record_used(&principal_id, lookup, valence::use_!(r#"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."#))
             .await?;
     }
 
@@ -160,7 +160,7 @@ pub async fn add_group_owner_user(
 
     let principal = ensure_user_principal(user_id, system).await?;
     group
-        .relate_to_owner_record(&require_model_id(principal.id(), "principal")?, system)
+        .relate_to_owner_record_used(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r#"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."#))
         .await?;
     persist_history_entry(
         v,
@@ -199,7 +199,7 @@ pub async fn remove_group_owner_user(
 
     let principal = ensure_user_principal(user_id, system).await?;
     let owner_ids = group
-        .get_owners_record_ids(system)
+        .get_owners_record_ids_used(system, valence::use_!(r#"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."#))
         .await?
         .into_iter()
         .map(|rid| rid.id().to_string())
@@ -216,7 +216,7 @@ pub async fn remove_group_owner_user(
     }
 
     group
-        .unrelate_from_owner_record(&require_model_id(principal.id(), "principal")?, system)
+        .unrelate_from_owner_record_used(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r#"When an operator **removes a group owner** in **Gauge**, we **delete the owner edge** so that principal no longer counts as an owner for approvals and edits. Operators see the updated owners on the group detail."#))
         .await?;
     persist_history_entry(
         v,
@@ -254,7 +254,7 @@ pub async fn add_group_member_user(
 
     let principal = ensure_user_principal(user_id, system).await?;
     group
-        .relate_to_member_record(&require_model_id(principal.id(), "principal")?, system)
+        .relate_to_member_record_used(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r#"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."#))
         .await?;
     persist_history_entry(
         v,
@@ -292,7 +292,7 @@ pub async fn remove_group_member_user(
 
     let principal = ensure_user_principal(user_id, system).await?;
     group
-        .unrelate_from_member_record(&require_model_id(principal.id(), "principal")?, system)
+        .unrelate_from_member_record_used(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r#"When an operator **removes a group member** in **Gauge**, we **delete the member edge** so that principal no longer inherits through this group. Operators see the updated members on the group detail."#))
         .await?;
     persist_history_entry(
         v,
@@ -342,7 +342,7 @@ pub async fn add_group_member_group(
 
     let principal = ensure_group_principal(child_group_id, system).await?;
     group
-        .relate_to_member_record(&require_model_id(principal.id(), "principal")?, system)
+        .relate_to_member_record_used(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r#"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."#))
         .await?;
     persist_history_entry(
         v,
@@ -387,7 +387,7 @@ pub async fn remove_group_member_group(
 
     let principal = ensure_group_principal(child_group_id, system).await?;
     group
-        .unrelate_from_member_record(&require_model_id(principal.id(), "principal")?, system)
+        .unrelate_from_member_record_used(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r#"When an operator **removes a group member** in **Gauge**, we **delete the member edge** so that principal no longer inherits through this group. Operators see the updated members on the group detail."#))
         .await?;
     persist_history_entry(
         v,

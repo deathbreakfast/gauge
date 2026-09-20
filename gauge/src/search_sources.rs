@@ -36,7 +36,7 @@ pub async fn user_principal_label(
     } else {
         user_id
     };
-    let display = user.get_profile(v).await.ok().and_then(|profiles| {
+    let display = user.get_profile_used(v, valence::use_!(r#"When we need a person's **display name**, we **follow the profile link** from their account so the product can show that name. Viewers who may read the profile see the name on the page that asked for it."#)).await.ok().and_then(|profiles| {
         profiles
             .into_iter()
             .next()

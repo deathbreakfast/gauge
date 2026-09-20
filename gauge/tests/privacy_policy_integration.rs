@@ -613,7 +613,7 @@ async fn session_owner_walk_reads_principals_without_system_tm_sec_08() -> anyho
     let group = PermissionGroup::get_used(group_id, &owner_v, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("session get group");
-    let owners = group.get_owners_record_ids(&owner_v).await?;
+    let owners = group.get_owners_record_ids_used(&owner_v, valence::use_!(r#"**Test:** Fixture owners edge list for `privacy_policy_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await?;
     assert!(
         !owners.is_empty(),
         "session actor must resolve owner principal edges without System elevate"

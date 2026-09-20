@@ -80,13 +80,13 @@ async fn revoke_group_from_permission(
         return Ok(false);
     };
 
-    let allowed = permission.get_allowed_principals_record_ids(system).await?;
+    let allowed = permission.get_allowed_principals_record_ids_used(system, valence::use_!(r#"When **Gauge** checks or shows **who holds a permission**, we **follow the allowed-principal edges** so the product can build the allow list or decide whether you already have access. Editors see that list; permission checks use it only to allow or deny."#)).await?;
     if !allowed.iter().any(|r| r == &group_principal_rid) {
         return Ok(false);
     }
 
     permission
-        .unrelate_from_allowed_principal_record(&group_principal_rid, system)
+        .unrelate_from_allowed_principal_record_used(&group_principal_rid, system, valence::use_!(r#"When an operator **revokes a permission** in **Gauge**, we **delete the allowed-principal edge** so that user or group no longer holds the grant. Operators see the updated allow list on the permission detail."#))
         .await
         .with_context(|| format!("unrelate {group_id} from permission {permission_id}"))?;
     Ok(true)

@@ -853,11 +853,11 @@ async fn duplicate_named_super_user_group_does_not_grant_privilege_sad() {
     .await
     .expect("upsert legit principal");
     created
-        .relate_to_owner_record(legit_principal.id().expect("principal id"), &system)
+        .relate_to_owner_record_used(legit_principal.id().expect("principal id"), &system, valence::use_!(r#"**Test:** Fixture owner-edge relate for `permission_domain_contract` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("relate legit owner");
     created
-        .relate_to_member_record(legit_principal.id().expect("principal id"), &system)
+        .relate_to_member_record_used(legit_principal.id().expect("principal id"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `permission_domain_contract` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("relate legit member");
 
@@ -890,11 +890,11 @@ async fn duplicate_named_super_user_group_does_not_grant_privilege_sad() {
     .await
     .expect("upsert attacker principal");
     fake_group
-        .relate_to_owner_record(attacker_principal.id().expect("principal id"), &system)
+        .relate_to_owner_record_used(attacker_principal.id().expect("principal id"), &system, valence::use_!(r#"**Test:** Fixture owner-edge relate for `permission_domain_contract` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("relate fake owner");
     fake_group
-        .relate_to_member_record(attacker_principal.id().expect("principal id"), &system)
+        .relate_to_member_record_used(attacker_principal.id().expect("principal id"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `permission_domain_contract` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("relate fake member");
 

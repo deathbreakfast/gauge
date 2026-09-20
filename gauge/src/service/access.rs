@@ -76,7 +76,7 @@ pub async fn permission_allows_user(
     user_ids: &[String],
     v: &Valence,
 ) -> anyhow::Result<bool> {
-    for principal_thing in permission.get_allowed_principals_record_ids(v).await? {
+    for principal_thing in permission.get_allowed_principals_record_ids_used(v, valence::use_!(r#"When **Gauge** checks or shows **who holds a permission**, we **follow the allowed-principal edges** so the product can build the allow list or decide whether you already have access. Editors see that list; permission checks use it only to allow or deny."#)).await? {
         let principal_id = principal_thing.id().to_string();
         match principal_kind_from_record(&principal_thing) {
             Some(PrincipalKind::User) => {

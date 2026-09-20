@@ -61,7 +61,7 @@ async fn ensure_super_user_group_script_is_idempotent_and_sync_seeds_roles() -> 
     let group = groups.first().expect("super group exists");
 
     let mut owner_ids = Vec::new();
-    for rid in group.get_owners_record_ids(&system).await? {
+    for rid in group.get_owners_record_ids_used(&system, valence::use_!(r#"**Test:** Fixture owners edge list for `super_user_scripts_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await? {
         let principal_id = rid.id().to_string();
         if principal_id.is_empty() {
             continue;
@@ -75,7 +75,7 @@ async fn ensure_super_user_group_script_is_idempotent_and_sync_seeds_roles() -> 
         }
     }
     let mut member_ids = Vec::new();
-    for rid in group.get_members_record_ids(&system).await? {
+    for rid in group.get_members_record_ids_used(&system, valence::use_!(r#"**Test:** Fixture members edge list for `super_user_scripts_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await? {
         let principal_id = rid.id().to_string();
         if principal_id.is_empty() {
             continue;
@@ -112,7 +112,7 @@ async fn seed_super_user_member_by_email_rejects_unknown_email_sad() -> anyhow::
     let msg = err.to_string();
     assert!(msg.contains("no user found for email"), "got {msg}");
 
-    let members = group.get_members_record_ids(&system).await?;
+    let members = group.get_members_record_ids_used(&system, valence::use_!(r#"**Test:** Fixture members edge list for `super_user_scripts_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await?;
     assert!(
         members.is_empty(),
         "failed email seed must not invent membership: {members:?}"
@@ -146,7 +146,7 @@ async fn seed_super_user_members_from_emails_seeds_known_and_soft_fails_missing(
     assert_eq!(stats.failed, 0);
 
     let mut member_ids = Vec::new();
-    for rid in group.get_members_record_ids(&system).await? {
+    for rid in group.get_members_record_ids_used(&system, valence::use_!(r#"**Test:** Fixture members edge list for `super_user_scripts_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await? {
         let principal_id = rid.id().to_string();
         if let Some(principal) =
             gauge::generated::PermissionUserPrincipal::get_used(&principal_id, &system, valence::use_!(r"**Test:** Fixture **Permission User Principal** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?

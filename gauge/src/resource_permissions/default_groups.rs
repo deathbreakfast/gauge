@@ -120,7 +120,7 @@ pub(super) async fn grant_named_permission_to_group(
         )
     })?;
 
-    match perm.relate_to_allowed_principal_record(&pid, system).await {
+    match perm.relate_to_allowed_principal_record_used(&pid, system, valence::use_!(r#"When an operator **grants a permission** in **Gauge**, we **write the allowed-principal edge** so that user or group may use the permission. Operators see the updated allow list on the permission detail."#)).await {
         Ok(()) => Ok(()),
         Err(e) => {
             let msg = e.to_string();

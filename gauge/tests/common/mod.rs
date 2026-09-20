@@ -291,11 +291,11 @@ pub async fn seed_super_user_group_with_member(system: &Valence, member_user_id:
     .await
     .expect("upsert user principal");
     created
-        .relate_to_owner_record(principal.id().expect("principal id exists"), system)
+        .relate_to_owner_record_used(principal.id().expect("principal id exists"), system, valence::use_!(r#"**Test:** Fixture owner-edge relate for `common` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("relate super user owner");
     created
-        .relate_to_member_record(principal.id().expect("principal id exists"), system)
+        .relate_to_member_record_used(principal.id().expect("principal id exists"), system, valence::use_!(r#"**Test:** Fixture member-edge relate for `common` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("relate super user member");
 }
@@ -341,7 +341,7 @@ pub async fn seed_group_with_owner(
     .await
     .expect("upsert principal");
     created
-        .relate_to_owner_record(principal.id().expect("principal id"), system)
+        .relate_to_owner_record_used(principal.id().expect("principal id"), system, valence::use_!(r#"**Test:** Fixture owner-edge relate for `common` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("relate owner");
     created

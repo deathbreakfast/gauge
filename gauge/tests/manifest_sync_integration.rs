@@ -178,7 +178,7 @@ async fn ensure_gluon_operator_groups_idempotent_happy_path() -> anyhow::Result<
     )
     .await?;
     registry
-        .relate_to_member_record(principal.id().expect("pid"), &system)
+        .relate_to_member_record_used(principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `manifest_sync_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     assert!(
@@ -222,7 +222,7 @@ async fn ensure_gluon_operator_groups_before_manifest_skips_grants_sad() -> anyh
     )
     .await?;
     registry
-        .relate_to_member_record(principal.id().expect("pid"), &system)
+        .relate_to_member_record_used(principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `manifest_sync_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     assert!(

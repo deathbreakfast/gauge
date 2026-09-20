@@ -74,7 +74,7 @@ async fn ensure_edge(
     system: &Valence,
 ) -> anyhow::Result<()> {
     let existing = system
-        .get_many_to_many_target_record_ids(from, edge_table)
+        .get_many_to_many_target_record_ids_used(from, edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let already = existing
@@ -82,7 +82,7 @@ async fn ensure_edge(
         .any(|t| t.table() == to.table() && t.id() == to.id());
     if !already {
         system
-            .relate_edge(edge_table, from, to)
+            .relate_edge_used(edge_table, from, to, valence::use_!(r#"When the **principal-connection migration** runs, we **write a unified principal edge** so Gauge can use the new allow, owner, and member model. Operators who run the migration use this."#))
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
@@ -113,7 +113,7 @@ async fn migrate_user_edges_from(
 ) -> anyhow::Result<()> {
     for from in sources {
         let targets = system
-            .get_many_to_many_target_record_ids(from, source_edge_table)
+            .get_many_to_many_target_record_ids_used(from, source_edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         for out in targets {
@@ -139,7 +139,7 @@ async fn migrate_group_edges_from(
 ) -> anyhow::Result<()> {
     for from in sources {
         let targets = system
-            .get_many_to_many_target_record_ids(from, source_edge_table)
+            .get_many_to_many_target_record_ids_used(from, source_edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         for out in targets {

@@ -169,11 +169,11 @@ async fn seed_super_user_owner(
     .await
     .expect("upsert owner principal");
     super_group
-        .relate_to_owner_record(owner_principal.id().expect("id"), system)
+        .relate_to_owner_record_used(owner_principal.id().expect("id"), system, valence::use_!(r#"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."#))
         .await
         .expect("relate super owner");
     super_group
-        .relate_to_member_record(owner_principal.id().expect("id"), system)
+        .relate_to_member_record_used(owner_principal.id().expect("id"), system, valence::use_!(r#"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."#))
         .await
         .expect("relate super member");
     owner_principal
@@ -194,7 +194,7 @@ async fn seed_demo_permission(
     .await
     .expect("upsert owners");
     owners
-        .relate_to_owner_record(owner_principal.id().expect("id"), system)
+        .relate_to_owner_record_used(owner_principal.id().expect("id"), system, valence::use_!(r#"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."#))
         .await
         .expect("owners owner");
 
@@ -271,7 +271,7 @@ async fn bootstrap_host() -> HostState {
     .await
     .expect("upsert member principal");
     permission
-        .relate_to_allowed_principal_record(member_principal.id().expect("id"), &system)
+        .relate_to_allowed_principal_record_used(member_principal.id().expect("id"), &system, valence::use_!(r#"When an operator **grants a permission** in **Gauge**, we **write the allowed-principal edge** so that user or group may use the permission. Operators see the updated allow list on the permission detail."#))
         .await
         .expect("grant member");
 

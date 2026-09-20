@@ -178,7 +178,12 @@ async fn sync_eligible_roles_into_super_group(
         .await?;
 
     for membership in role_memberships {
-        let user = membership.get_user(system).await?;
+        let user = membership
+            .get_user_used(
+                system,
+                valence::use_!(r#"When Gauge **syncs Super User members from account roles**, we **follow each membership’s user link** so eligible owners and super-admins can be added to the Super User group. Operators see the updated Super User membership list."#),
+            )
+            .await?;
         ensure_user_in_super_group(super_group, &user, system).await?;
     }
 
@@ -303,7 +308,7 @@ async fn ensure_user_in_super_group(
     system: &Valence,
 ) -> anyhow::Result<()> {
     let owner_ids: HashSet<String> = super_group
-        .get_owners_record_ids(system)
+        .get_owners_record_ids_used(system, valence::use_!(r#"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."#))
         .await?
         .into_iter()
         .filter_map(|rid| {
@@ -321,17 +326,18 @@ async fn ensure_user_in_super_group(
     )?;
     if !owner_ids.contains(&owner_principal_id) {
         super_group
-            .relate_to_owner_record(
+            .relate_to_owner_record_used(
                 principal
                     .id()
                     .ok_or_else(|| anyhow::anyhow!("principal id missing after persist"))?,
                 system,
-            )
+        valence::use_!(r#"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."#),
+    )
             .await?;
     }
 
     let member_ids: HashSet<String> = super_group
-        .get_members_record_ids(system)
+        .get_members_record_ids_used(system, valence::use_!(r#"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny."#))
         .await?
         .into_iter()
         .map(|rid| rid.id().to_string())
@@ -344,12 +350,13 @@ async fn ensure_user_in_super_group(
     )?;
     if !member_ids.contains(&principal_id) {
         super_group
-            .relate_to_member_record(
+            .relate_to_member_record_used(
                 principal
                     .id()
                     .ok_or_else(|| anyhow::anyhow!("principal id missing after persist"))?,
                 system,
-            )
+        valence::use_!(r#"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."#),
+    )
             .await?;
     }
 
@@ -363,8 +370,7 @@ async fn get_user_principal_raw(
     let backend = system
         .backend_for_table("permission_user_principal")
         .map_err(|e| anyhow::anyhow!("resolve permission_user_principal backend: {e}"))?;
-    match backend
-        .get_record("permission_user_principal", id)
+    match valence::get_record_used(backend, "permission_user_principal", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_user_principal: {e}"))?
     {
@@ -382,8 +388,7 @@ async fn get_group_principal_raw(
     let backend = system
         .backend_for_table("permission_group_principal")
         .map_err(|e| anyhow::anyhow!("resolve permission_group_principal backend: {e}"))?;
-    match backend
-        .get_record("permission_group_principal", id)
+    match valence::get_record_used(backend, "permission_group_principal", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_group_principal: {e}"))?
     {
@@ -398,8 +403,7 @@ async fn get_group_raw(id: &str, system: &Valence) -> anyhow::Result<Option<Perm
     let backend = system
         .backend_for_table("permission_group")
         .map_err(|e| anyhow::anyhow!("resolve permission_group backend: {e}"))?;
-    match backend
-        .get_record("permission_group", id)
+    match valence::get_record_used(backend, "permission_group", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_group: {e}"))?
     {
@@ -429,7 +433,7 @@ async fn group_has_recursive_member(
             continue;
         }
 
-        for owner in current.get_owners_record_ids(system).await? {
+        for owner in current.get_owners_record_ids_used(system, valence::use_!(r#"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."#)).await? {
             let owner_id = owner.id().to_string();
             match principal_kind_label(&owner) {
                 Some("user") => {
@@ -453,7 +457,7 @@ async fn group_has_recursive_member(
                 _ => {}
             }
         }
-        for member in current.get_members_record_ids(system).await? {
+        for member in current.get_members_record_ids_used(system, valence::use_!(r#"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny."#)).await? {
             let member_table = member.table();
             let member_id = member.id().to_string();
             if member_id.is_empty() {

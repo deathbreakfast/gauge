@@ -97,7 +97,7 @@ async fn seed_resource_kind_catalog_gluon_idempotent_and_creator_holds_create() 
     )
     .await?;
     group
-        .relate_to_member_record(principal.id().expect("pid"), &system)
+        .relate_to_member_record_used(principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let uv = user_valence(&system, creator);
@@ -261,7 +261,7 @@ async fn default_groups_granted_on_view() -> anyhow::Result<()> {
     )
     .await?;
     group
-        .relate_to_member_record(principal.id().expect("pid"), &system)
+        .relate_to_member_record_used(principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let vv = user_valence(&system, viewer);
@@ -313,7 +313,7 @@ async fn resource_policy_allows_view_when_granted() -> anyhow::Result<()> {
     )
     .await?;
     group
-        .relate_to_member_record(principal.id().expect("pid"), &system)
+        .relate_to_member_record_used(principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let vv = user_valence(&system, viewer);
@@ -390,7 +390,7 @@ async fn neutrino_umbrella_grants_empty_operators_denied_without_per_secret_gran
     )
     .await?;
     group
-        .relate_to_member_record(principal.id().expect("pid"), &system)
+        .relate_to_member_record_used(principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let ov = user_valence(&system, operator);
@@ -467,7 +467,7 @@ async fn colliding_resource_ids_get_distinct_bundles() -> anyhow::Result<()> {
     )
     .await?;
     perm_a
-        .relate_to_allowed_principal_record(principal.id().expect("pid"), &system)
+        .relate_to_allowed_principal_record_used(principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture allowed-principal relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let sv = user_valence(&system, stranger);
@@ -529,7 +529,7 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
     let owners_group = gauge::generated::PermissionGroup::get_used(&bundle.owners_group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("owners group");
-    let owner_targets = owners_group.get_owners_record_ids(&system).await?;
+    let owner_targets = owners_group.get_owners_record_ids_used(&system, valence::use_!(r#"**Test:** Fixture owners edge list for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await?;
     assert!(
         !owner_targets.is_empty(),
         "owners group should have owner edges before delete"
@@ -540,7 +540,7 @@ async fn delete_resource_permission_bundle_tears_down_and_is_idempotent() -> any
         let perm = gauge::generated::Permission::get_used(perm_id, &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
             .expect("permission before delete");
-        let allowed = perm.get_allowed_principals_record_ids(&system).await?;
+        let allowed = perm.get_allowed_principals_record_ids_used(&system, valence::use_!(r#"**Test:** Fixture allowed-principals list for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await?;
         assert!(
             !allowed.is_empty(),
             "permission {perm_id} should have allowed_principal edges before delete"
@@ -806,7 +806,7 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
         )
         .await?;
         groups[i]
-            .relate_to_member_record(child_principal.id().expect("pid"), &system)
+            .relate_to_member_record_used(child_principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
             .await?;
     }
 
@@ -824,7 +824,7 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
     )
     .await?;
     groups[DEPTH - 1]
-        .relate_to_member_record(member_principal.id().expect("pid"), &system)
+        .relate_to_member_record_used(member_principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let outer_principal = gauge::generated::PermissionGroupPrincipal::upsert_used(
@@ -843,7 +843,7 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
         .first()
         .await?
         .expect("perm");
-    perm.relate_to_allowed_principal_record(outer_principal.id().expect("pid"), &system)
+    perm.relate_to_allowed_principal_record_used(outer_principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture allowed-principal relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let mv = user_valence(&system, member);
@@ -934,9 +934,9 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
         valence::use_!(r"**Test:** Fixture **Permission Group Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    g1.relate_to_member_record(p2.id().expect("pid"), &system)
+    g1.relate_to_member_record_used(p2.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
-    g2.relate_to_member_record(p1.id().expect("pid"), &system)
+    g2.relate_to_member_record_used(p1.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
     // Grant view to the cyclic group — stranger is not a member, so still deny,
     // but the walk must finish.
@@ -946,7 +946,7 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
         .first()
         .await?
         .expect("perm");
-    perm.relate_to_allowed_principal_record(p1.id().expect("pid"), &system)
+    perm.relate_to_allowed_principal_record_used(p1.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture allowed-principal relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
     assert!(!gauge::actor_can_raw::actor_can_raw(&sv, &view).await?);
     Ok(())
@@ -1017,7 +1017,7 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
         valence::use_!(r"**Test:** Fixture **Permission Group Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    perm.relate_to_allowed_principal_record(ops_principal.id().expect("pid"), &system)
+    perm.relate_to_allowed_principal_record_used(ops_principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture allowed-principal relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let operator = "ops_rev";
@@ -1035,7 +1035,7 @@ async fn revoke_neutrino_secret_umbrella_grants_is_surgical_and_idempotent() -> 
         valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    ops.relate_to_member_record(user_principal.id().expect("pid"), &system)
+    ops.relate_to_member_record_used(user_principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
 
     let ov = user_valence(&system, operator);
@@ -1160,7 +1160,7 @@ async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()>
         valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
     .await?;
-    fake.relate_to_member_record(stranger_principal.id().expect("pid"), &system)
+    fake.relate_to_member_record_used(stranger_principal.id().expect("pid"), &system, valence::use_!(r#"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await?;
     assert!(!service::actor_can(&stranger_v, &maintain).await?);
     Ok(())
