@@ -119,7 +119,7 @@ async fn raw_get_json(
     let backend = v
         .backend_for_table(table)
         .map_err(|e| anyhow::anyhow!("resolve {table} backend: {e}"))?;
-    valence::get_record_used(backend, table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    valence::get_record(backend, table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read {table}: {e}"))
 }
@@ -151,7 +151,7 @@ async fn permission_allows_user_raw(
     user_ids: &[String],
     v: &Valence,
 ) -> anyhow::Result<bool> {
-    for principal_thing in permission.get_allowed_principals_record_ids_used(v, valence::use_!(r#"When **Gauge** checks or shows **who holds a permission**, we **follow the allowed-principal edges** so the product can build the allow list or decide whether you already have access. Editors see that list; permission checks use it only to allow or deny."#)).await? {
+    for principal_thing in permission.get_allowed_principals_record_ids(v, valence::use_!(r#"When **Gauge** checks or shows **who holds a permission**, we **follow the allowed-principal edges** so the product can build the allow list or decide whether you already have access. Editors see that list; permission checks use it only to allow or deny."#)).await? {
         let principal_id = principal_thing.id().to_string();
         match principal_thing.table() {
             "permission_user_principal" => {
@@ -201,12 +201,12 @@ async fn group_has_user_raw(
             continue;
         }
 
-        for owner in current.get_owners_record_ids_used(v, valence::use_!(r#"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."#)).await? {
+        for owner in current.get_owners_record_ids(v, valence::use_!(r#"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."#)).await? {
             if principal_is_user_match(&owner, user_ids, v, &mut queue).await? {
                 return Ok(true);
             }
         }
-        for member in current.get_members_record_ids_used(v, valence::use_!(r#"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny."#)).await? {
+        for member in current.get_members_record_ids(v, valence::use_!(r#"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny."#)).await? {
             if principal_is_user_match(&member, user_ids, v, &mut queue).await? {
                 return Ok(true);
             }

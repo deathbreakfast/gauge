@@ -21,12 +21,12 @@ async fn target_owner_user_ids(
     let mut out: Vec<RecordId> = Vec::new();
 
     if table == "permission" {
-        if let Some(permission) = Permission::get_used(&id, lookup, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
-            let owners_group = permission.get_owners_group_used(lookup, valence::use_!(r#"When a **permission request** needs its **owners**, we **load the permission's owners group** so Gauge can find who should be notified. The notifier uses those owner user ids; the group row itself is not shown on this path."#)).await?;
+        if let Some(permission) = Permission::get(&id, lookup, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
+            let owners_group = permission.get_owners_group(lookup, valence::use_!(r#"When a **permission request** needs its **owners**, we **load the permission's owners group** so Gauge can find who should be notified. The notifier uses those owner user ids; the group row itself is not shown on this path."#)).await?;
             collect_owner_user_ids_from_group(&owners_group, lookup, &mut out).await?;
         }
     } else if table == "permission_group" {
-        if let Some(group) = PermissionGroup::get_used(&id, lookup, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
+        if let Some(group) = PermissionGroup::get(&id, lookup, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
             collect_owner_user_ids_from_group(&group, lookup, &mut out).await?;
         }
     }
@@ -52,24 +52,24 @@ async fn collect_owner_user_ids_from_group(
             continue;
         }
 
-        for owner in current.get_owners_record_ids_used(valence, valence::use_!(r#"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."#)).await? {
+        for owner in current.get_owners_record_ids(valence, valence::use_!(r#"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."#)).await? {
             let owner_id = owner.id().to_string();
             match owner.table() {
                 "permission_user_principal" => {
                     if let Some(principal) =
-                        PermissionUserPrincipal::get_used(&owner_id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await?
+                        PermissionUserPrincipal::get(&owner_id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await?
                     {
                         out.push(principal.user().clone());
                     }
                 }
                 "permission_group_principal" => {
                     if let Some(principal) =
-                        PermissionGroupPrincipal::get_used(&owner_id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission Group Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await?
+                        PermissionGroupPrincipal::get(&owner_id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission Group Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await?
                     {
                         let nested_id =
                             valence::extract_id_from_record(principal.group()).unwrap_or_default();
                         if let Some(nested_group) =
-                            PermissionGroup::get_used(&nested_id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await?
+                            PermissionGroup::get(&nested_id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await?
                         {
                             queue.push(nested_group);
                         }

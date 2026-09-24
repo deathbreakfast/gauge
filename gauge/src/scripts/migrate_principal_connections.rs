@@ -22,7 +22,7 @@ fn group_principal_id(group_id: &str) -> String {
 }
 
 async fn ensure_user_principal(user_id: &str, system: &Valence) -> anyhow::Result<RecordId> {
-    let user = lepton::generated::User::get_used(user_id, system, valence::use_!(r"In **Gauge permissions**, we **load User** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    let user = lepton::generated::User::get(user_id, system, valence::use_!(r"In **Gauge permissions**, we **load User** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await?
         .ok_or_else(|| anyhow::anyhow!("User not found during migration: {user_id}"))?;
     let user_record = user
@@ -30,12 +30,12 @@ async fn ensure_user_principal(user_id: &str, system: &Valence) -> anyhow::Resul
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("user id missing after persist"))?;
     let principal_id = user_principal_id(user_id);
-    if PermissionUserPrincipal::get_used(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if PermissionUserPrincipal::get(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await?
         .is_none()
     {
         let principal = PermissionUserPrincipal::new(user_record, canonical_user_id(user_id))?;
-        PermissionUserPrincipal::upsert_used(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
+        PermissionUserPrincipal::upsert(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     }
     Ok(RecordId::new(
         "permission_user_principal",
@@ -44,7 +44,7 @@ async fn ensure_user_principal(user_id: &str, system: &Valence) -> anyhow::Resul
 }
 
 async fn ensure_group_principal(group_id: &str, system: &Valence) -> anyhow::Result<RecordId> {
-    let group = PermissionGroup::get_used(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    let group = PermissionGroup::get(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await?
         .ok_or_else(|| {
             anyhow::anyhow!("Permission group not found during migration: {group_id}")
@@ -54,12 +54,12 @@ async fn ensure_group_principal(group_id: &str, system: &Valence) -> anyhow::Res
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("group id missing after persist"))?;
     let principal_id = group_principal_id(group_id);
-    if PermissionGroupPrincipal::get_used(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if PermissionGroupPrincipal::get(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await?
         .is_none()
     {
         let principal = PermissionGroupPrincipal::new(group_record, group_id.to_string())?;
-        PermissionGroupPrincipal::upsert_used(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
+        PermissionGroupPrincipal::upsert(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     }
     Ok(RecordId::new(
         "permission_group_principal",
@@ -74,7 +74,7 @@ async fn ensure_edge(
     system: &Valence,
 ) -> anyhow::Result<()> {
     let existing = system
-        .get_many_to_many_target_record_ids_used(from, edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
+        .get_many_to_many_target_record_ids(from, edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let already = existing
@@ -82,7 +82,7 @@ async fn ensure_edge(
         .any(|t| t.table() == to.table() && t.id() == to.id());
     if !already {
         system
-            .relate_edge_used(edge_table, from, to, valence::use_!(r#"When the **principal-connection migration** runs, we **write a unified principal edge** so Gauge can use the new allow, owner, and member model. Operators who run the migration use this."#))
+            .relate_edge(edge_table, from, to, valence::use_!(r#"When the **principal-connection migration** runs, we **write a unified principal edge** so Gauge can use the new allow, owner, and member model. Operators who run the migration use this."#))
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
@@ -90,7 +90,7 @@ async fn ensure_edge(
 }
 
 async fn list_permission_record_ids(system: &Valence) -> anyhow::Result<Vec<RecordId>> {
-    let rows = Permission::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await?;
+    let rows = Permission::query(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await?;
     Ok(rows
         .into_iter()
         .filter_map(|row| row.id().cloned())
@@ -98,7 +98,7 @@ async fn list_permission_record_ids(system: &Valence) -> anyhow::Result<Vec<Reco
 }
 
 async fn list_group_record_ids(system: &Valence) -> anyhow::Result<Vec<RecordId>> {
-    let rows = PermissionGroup::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await?;
+    let rows = PermissionGroup::query(system, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await?;
     Ok(rows
         .into_iter()
         .filter_map(|row| row.id().cloned())
@@ -113,7 +113,7 @@ async fn migrate_user_edges_from(
 ) -> anyhow::Result<()> {
     for from in sources {
         let targets = system
-            .get_many_to_many_target_record_ids_used(from, source_edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
+            .get_many_to_many_target_record_ids(from, source_edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         for out in targets {
@@ -139,7 +139,7 @@ async fn migrate_group_edges_from(
 ) -> anyhow::Result<()> {
     for from in sources {
         let targets = system
-            .get_many_to_many_target_record_ids_used(from, source_edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
+            .get_many_to_many_target_record_ids(from, source_edge_table, valence::use_!(r#"When the **principal-connection migration** runs, we **list existing edge targets** for a permission or group so legacy links can be copied onto unified principal edges. Operators who run the migration use this."#))
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         for out in targets {

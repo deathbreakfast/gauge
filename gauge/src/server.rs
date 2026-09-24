@@ -71,7 +71,7 @@ pub async fn resolve_permission_id_by_name(
         let valence = ctx
             .valence()
             .map_err(|e| ServerFnError::new(format!("Failed to build Valence: {e}")))?;
-        let rows = crate::generated::Permission::query_used(&valence, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+        let rows = crate::generated::Permission::query(&valence, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
             .where_name(StringPredicate::Equals(permission_name))
             .limit(1)
             .await

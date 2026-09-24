@@ -91,7 +91,7 @@ pub async fn append_history_row(
         Utc::now(),
         actor,
     )?;
-    if let Err(e) = PermissionHistory::create_used(row, valence, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission History** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await {
+    if let Err(e) = PermissionHistory::create(row, valence, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission History** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await {
         log::warn!(
             "permission history append failed: source={source} field={}: {e}",
             parts.field_name
@@ -300,7 +300,7 @@ pub async fn delete_history_source(
 ) -> anyhow::Result<()> {
     match table {
         "permission" => {
-            if let Some(before) = Permission::get_used(id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
+            if let Some(before) = Permission::get(id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
                 let field_changes =
                     crate::generated::PermissionFieldChanges::compute(Some(&before), None);
                 let mutation = valence::Mutation::new(
@@ -314,10 +314,10 @@ pub async fn delete_history_source(
                     .on_permission_mutation(&mutation, Some(id))
                     .await?;
             }
-            Permission::delete_used(id, valence, valence::use_!(r"When **Gauge permissions** finishes cleanup, we **remove Permission** so leftover rows do not remain after the operation. Only the cleanup path for **Gauge permissions** uses this step; it is not shown as a standalone end-user page by itself.")).await?;
+            Permission::delete(id, valence, valence::use_!(r"When **Gauge permissions** finishes cleanup, we **remove Permission** so leftover rows do not remain after the operation. Only the cleanup path for **Gauge permissions** uses this step; it is not shown as a standalone end-user page by itself.")).await?;
         }
         "permission_group" => {
-            if let Some(before) = PermissionGroup::get_used(id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
+            if let Some(before) = PermissionGroup::get(id, valence, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
                 let field_changes =
                     crate::generated::PermissionGroupFieldChanges::compute(Some(&before), None);
                 let mutation = valence::Mutation::new(
@@ -331,7 +331,7 @@ pub async fn delete_history_source(
                     .on_group_mutation(&mutation, Some(id))
                     .await?;
             }
-            PermissionGroup::delete_used(id, valence, valence::use_!(r"When **Gauge permissions** finishes cleanup, we **remove Permission Group** so leftover rows do not remain after the operation. Only the cleanup path for **Gauge permissions** uses this step; it is not shown as a standalone end-user page by itself.")).await?;
+            PermissionGroup::delete(id, valence, valence::use_!(r"When **Gauge permissions** finishes cleanup, we **remove Permission Group** so leftover rows do not remain after the operation. Only the cleanup path for **Gauge permissions** uses this step; it is not shown as a standalone end-user page by itself.")).await?;
         }
         other => anyhow::bail!("unsupported history source table: {other}"),
     }

@@ -217,7 +217,7 @@ async fn delete_group_keeps_session_actor_on_deleted_history() {
 
     // Soft-delete keeps history until DAG finalize; harness uses noop dispatcher.
     // Query rows directly: list_history can-edit gates hide subjects after delete.
-    let rows = PermissionHistory::query_used(&system, valence::use_!(r"**Test:** Fixture **Permission History** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    let rows = PermissionHistory::query(&system, valence::use_!(r"**Test:** Fixture **Permission History** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await
         .expect("query permission_history");
     let deleted = rows
@@ -325,7 +325,7 @@ async fn list_history_caps_at_max_history_list_rows() {
             Some(valence::RecordId::new("user", "owner")),
         )
         .expect("history row");
-        PermissionHistory::create_used(row, &owner_ctx, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        PermissionHistory::create(row, &owner_ctx, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await
             .unwrap_or_else(|e| panic!("create history row {i}: {e}"));
     }

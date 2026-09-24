@@ -31,7 +31,7 @@ async fn seed_permission_owned_by_group(
     permission_id: &str,
     owners_group_id: &str,
 ) -> anyhow::Result<Permission> {
-    let domain = PermissionDomain::upsert_used(
+    let domain = PermissionDomain::upsert(
         "domain_policy",
         PermissionDomain::new(
             false,
@@ -55,7 +55,7 @@ async fn seed_permission_owned_by_group(
         now,
         now,
     )?;
-    let created = Permission::upsert_used(permission_id, permission, system, valence::use_!(r"**Test:** Fixture **Permission** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
+    let created = Permission::upsert(permission_id, permission, system, valence::use_!(r"**Test:** Fixture **Permission** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
     Ok(created)
 }
 
@@ -73,7 +73,7 @@ async fn seed_permission_history_on_permission(
         Utc::now(),
         Some(valence::RecordId::new("user", actor_user)),
     )?;
-    PermissionHistory::upsert_used(history_id, history, owner_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
+    PermissionHistory::upsert(history_id, history, owner_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
     Ok(())
 }
 
@@ -91,7 +91,7 @@ async fn seed_permission_history_on_group(
         Utc::now(),
         Some(valence::RecordId::new("user", actor_user)),
     )?;
-    PermissionHistory::upsert_used(history_id, history, owner_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
+    PermissionHistory::upsert(history_id, history, owner_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
     Ok(())
 }
 
@@ -131,7 +131,7 @@ async fn permission_group_policy_allows_owner_denies_non_owner_tm_sec_01_02() ->
     let schema = SchemaRegistry::global()
         .get_schema("permission_group")
         .expect("permission_group schema registered");
-    let raw = QueryCore::get_record_json_used(
+    let raw = QueryCore::get_record_json(
         "permission_group",
         group_id,
         &system,
@@ -188,13 +188,13 @@ async fn permission_policy_enforces_model_mutation_paths_tm_sec_01_02() -> anyho
     let owner_v = user_ctx(&system, owner_user);
     let non_owner_v = user_ctx(&system, non_owner_user);
 
-    let existing = PermissionGroup::get_used(group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    let existing = PermissionGroup::get(group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("group exists");
 
     let owner_update = existing
         .clone()
-        .get_mutable_used(&owner_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
+        .get_mutable(&owner_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
         .set_name("owner-updated-group".to_string())?
         .commit()
         .await
@@ -206,7 +206,7 @@ async fn permission_policy_enforces_model_mutation_paths_tm_sec_01_02() -> anyho
     );
 
     let non_owner_update = existing
-        .get_mutable_used(&non_owner_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
+        .get_mutable(&non_owner_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
         .set_name("hijacked-group".to_string())?
         .commit()
         .await;
@@ -215,7 +215,7 @@ async fn permission_policy_enforces_model_mutation_paths_tm_sec_01_02() -> anyho
         "TM-SEC-02 non-owner direct group mutate",
     );
 
-    let after_denied = PermissionGroup::get_used(group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    let after_denied = PermissionGroup::get(group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("group remains");
     assert_eq!(
@@ -224,7 +224,7 @@ async fn permission_policy_enforces_model_mutation_paths_tm_sec_01_02() -> anyho
         "non-owner mutate must not change name"
     );
 
-    let non_owner_delete_permission = Permission::delete_used("perm_policy_2", &non_owner_v, valence::use_!(r"**Test:** Fixture **Permission** remove for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await;
+    let non_owner_delete_permission = Permission::delete("perm_policy_2", &non_owner_v, valence::use_!(r"**Test:** Fixture **Permission** remove for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await;
     assert_privacy_denied(
         non_owner_delete_permission.expect_err("non-owner delete"),
         "TM-SEC-02 non-owner permission delete",
@@ -235,7 +235,7 @@ async fn permission_policy_enforces_model_mutation_paths_tm_sec_01_02() -> anyho
     let schema = SchemaRegistry::global()
         .get_schema("permission")
         .expect("permission schema");
-    let raw = QueryCore::get_record_json_used(
+    let raw = QueryCore::get_record_json(
         "permission",
         "perm_policy_2",
         &system,
@@ -255,7 +255,7 @@ async fn permission_policy_enforces_model_mutation_paths_tm_sec_01_02() -> anyho
     .await
     .expect("TM-SEC-01 owner permission delete via history cascade helper");
 
-    match Permission::get_used("perm_policy_2", &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await {
+    match Permission::get("perm_policy_2", &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await {
         Ok(None) => {}
         Err(err) if err.to_string().to_lowercase().contains("pending deletion") => {}
         Ok(Some(_)) => panic!("owner delete must remove permission"),
@@ -274,7 +274,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
 
     // Seed owner identity to satisfy foreign-key constraints for created_by.
     seed_group_with_owner(&system, group_id, owner_user).await;
-    PermissionDomain::upsert_used(
+    PermissionDomain::upsert(
         "domain_policy",
         PermissionDomain::new(
             false,
@@ -298,7 +298,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
         Utc::now(),
         Utc::now(),
     )?;
-    let group_created = PermissionGroup::create_used(create_group, &owner_v, valence::use_!(r"**Test:** Fixture **Permission Group** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
+    let group_created = PermissionGroup::create(create_group, &owner_v, valence::use_!(r"**Test:** Fixture **Permission Group** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
     assert_eq!(group_created.name(), "created-by-auth-user");
 
     let permission = Permission::new(
@@ -310,7 +310,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
         Utc::now(),
         Utc::now(),
     )?;
-    let permission_created = Permission::create_used(permission, &owner_v, valence::use_!(r"**Test:** Fixture **Permission** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
+    let permission_created = Permission::create(permission, &owner_v, valence::use_!(r"**Test:** Fixture **Permission** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await?;
     assert_eq!(permission_created.name(), "perm-create-auth");
 
     let permission_anon = Permission::new(
@@ -322,7 +322,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
         Utc::now(),
         Utc::now(),
     )?;
-    let permission_created_anon = Permission::create_used(permission_anon, &anonymous_v, valence::use_!(r"**Test:** Fixture **Permission** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await;
+    let permission_created_anon = Permission::create(permission_anon, &anonymous_v, valence::use_!(r"**Test:** Fixture **Permission** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await;
     assert_privacy_denied(
         permission_created_anon.expect_err("anon create"),
         "anonymous permission create",
@@ -356,7 +356,7 @@ async fn permission_history_update_delete_peer_denied_owner_allowed() -> anyhow:
     let schema = SchemaRegistry::global()
         .get_schema("permission_history")
         .expect("permission_history schema registered");
-    let raw = QueryCore::get_record_json_used(
+    let raw = QueryCore::get_record_json(
         "permission_history",
         record_id,
         &system,
@@ -403,18 +403,18 @@ async fn super_user_policy_allows_permission_group_and_permission_mutations() ->
     let super_user_v = user_ctx(&system, super_user);
 
     let super_group_update = group
-        .get_mutable_used(&super_user_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
+        .get_mutable(&super_user_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
         .set_name("super-user-updated-group".to_string())?
         .commit()
         .await
         .expect("TM-SEC-01 Super User Valence group mutate");
     assert_eq!(super_group_update.name(), "super-user-updated-group");
 
-    let existing_permission = Permission::get_used("perm_super_policy_1", &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    let existing_permission = Permission::get("perm_super_policy_1", &system, valence::use_!(r"**Test:** Fixture **Permission** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("permission exists");
     let super_permission_update = existing_permission
-        .get_mutable_used(&super_user_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
+        .get_mutable(&super_user_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
         .set_name("super-user-updated-permission".to_string())?
         .commit()
         .await
@@ -446,7 +446,7 @@ async fn super_user_can_update_delete_permission_history_via_parent_happy() -> a
     let schema = SchemaRegistry::global()
         .get_schema("permission_history")
         .expect("permission_history schema registered");
-    let raw = QueryCore::get_record_json_used(
+    let raw = QueryCore::get_record_json(
         "permission_history",
         record_id,
         &system,
@@ -497,7 +497,7 @@ async fn permission_request_update_maintainer_only_tm_sec_05() -> anyhow::Result
     let schema = SchemaRegistry::global()
         .get_schema("permission_request")
         .expect("permission_request schema registered");
-    let raw = QueryCore::get_record_json_used(
+    let raw = QueryCore::get_record_json(
         "permission_request",
         &request.id,
         &system,
@@ -517,12 +517,12 @@ async fn permission_request_update_maintainer_only_tm_sec_05() -> anyhow::Result
         "requestor is not REQUEST_TARGET_MAINTAINER",
     );
 
-    let loaded = gauge::generated::PermissionRequest::get_used(&request.id, &system, valence::use_!(r"**Test:** Fixture **Permission Request** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    let loaded = gauge::generated::PermissionRequest::get(&request.id, &system, valence::use_!(r"**Test:** Fixture **Permission Request** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("loaded under system");
     let outsider_commit = loaded
         .clone()
-        .get_mutable_used(&outsider_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
+        .get_mutable(&outsider_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
         .set_status(gauge::generated::PermissionRequestStatus::Approved)?
         .commit()
         .await;
@@ -532,13 +532,13 @@ async fn permission_request_update_maintainer_only_tm_sec_05() -> anyhow::Result
     );
 
     loaded
-        .get_mutable_used(&owner_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
+        .get_mutable(&owner_v, valence::use_!(r"**Test:** Fixture **this data** access in `privacy_policy_integration` so the suite can arrange and assert persistence. CI and developers running the suite only."))
         .set_status(gauge::generated::PermissionRequestStatus::Denied)?
         .commit()
         .await
         .expect("TM-SEC-05 maintainer session decide via Valence");
 
-    let decided = gauge::generated::PermissionRequest::get_used(&request.id, &system, valence::use_!(r"**Test:** Fixture **Permission Request** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    let decided = gauge::generated::PermissionRequest::get(&request.id, &system, valence::use_!(r"**Test:** Fixture **Permission Request** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("request remains");
     assert_eq!(
@@ -568,7 +568,7 @@ async fn permission_history_read_defers_to_parent_read_tm_sec_04() -> anyhow::Re
     let schema = SchemaRegistry::global()
         .get_schema("permission_history")
         .expect("permission_history schema registered");
-    let raw = QueryCore::get_record_json_used(
+    let raw = QueryCore::get_record_json(
         "permission_history",
         record_id,
         &system,
@@ -597,7 +597,7 @@ async fn session_owner_walk_reads_principals_without_system_tm_sec_08() -> anyho
     let schema = SchemaRegistry::global()
         .get_schema("permission_group")
         .expect("permission_group schema");
-    let raw = QueryCore::get_record_json_used(
+    let raw = QueryCore::get_record_json(
         "permission_group",
         group_id,
         &system,
@@ -610,10 +610,10 @@ async fn session_owner_walk_reads_principals_without_system_tm_sec_08() -> anyho
         .await
         .expect("TM-SEC-08 owner recursive policy under session Valence");
 
-    let group = PermissionGroup::get_used(group_id, &owner_v, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    let group = PermissionGroup::get(group_id, &owner_v, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?
         .expect("session get group");
-    let owners = group.get_owners_record_ids_used(&owner_v, valence::use_!(r#"**Test:** Fixture owners edge list for `privacy_policy_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await?;
+    let owners = group.get_owners_record_ids(&owner_v, valence::use_!(r#"**Test:** Fixture owners edge list for `privacy_policy_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#)).await?;
     assert!(
         !owners.is_empty(),
         "session actor must resolve owner principal edges without System elevate"
@@ -649,7 +649,7 @@ async fn permission_history_create_owner_happy_outsider_forge_denied_sad() -> an
         Utc::now(),
         Some(valence::RecordId::new("user", owner_user)),
     )?;
-    PermissionHistory::create_used(owner_row, &owner_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+    PermissionHistory::create(owner_row, &owner_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await
         .expect("owner may create permission_history via defer→parent Update");
 
@@ -661,7 +661,7 @@ async fn permission_history_create_owner_happy_outsider_forge_denied_sad() -> an
         Utc::now(),
         Some(valence::RecordId::new("user", owner_user)),
     )?;
-    let forge_attempt = PermissionHistory::create_used(forged, &outsider_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await;
+    let forge_attempt = PermissionHistory::create(forged, &outsider_v, valence::use_!(r"**Test:** Fixture **Permission History** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only.")).await;
     assert!(
         forge_attempt.is_err(),
         "authenticated outsider PermissionHistory::create must fail without parent Update"

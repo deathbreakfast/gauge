@@ -91,7 +91,7 @@ async fn ensure_domain(
 ) -> anyhow::Result<PermissionDomain> {
     let domain_id = normalized_id(&domain.key);
     // No-change fast path: existing domain → zero writes (boot preflight stays cheap).
-    if let Some(existing) = PermissionDomain::get_used(&domain_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Domain** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
+    if let Some(existing) = PermissionDomain::get(&domain_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Domain** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
         stats.domains_existing += 1;
         return Ok(existing);
     }
@@ -109,14 +109,14 @@ async fn ensure_domain(
         now,
         now,
     )?;
-    let persisted = PermissionDomain::upsert_used(&domain_id, created, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
+    let persisted = PermissionDomain::upsert(&domain_id, created, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     stats.domains_created += 1;
     Ok(persisted)
 }
 
 async fn ensure_owner_group(app_id: &str, system: &Valence) -> anyhow::Result<PermissionGroup> {
     let group_id = format!("manifest_{}_owners", normalized_id(app_id));
-    if let Some(existing) = PermissionGroup::get_used(&group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
+    if let Some(existing) = PermissionGroup::get(&group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
         return Ok(existing);
     }
 
@@ -127,12 +127,12 @@ async fn ensure_owner_group(app_id: &str, system: &Valence) -> anyhow::Result<Pe
         now,
         now,
     )?;
-    let persisted = PermissionGroup::upsert_used(&group_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
+    let persisted = PermissionGroup::upsert(&group_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     Ok(persisted)
 }
 
 async fn permission_exists_by_name(name: &str, system: &Valence) -> anyhow::Result<bool> {
-    let records = Permission::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    let records = Permission::query(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(name.to_string()))
         .await?;
     Ok(!records.is_empty())
@@ -182,7 +182,7 @@ async fn ensure_permission(
         now,
         now,
     )?;
-    Permission::upsert_used(&permission_id, record, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
+    Permission::upsert(&permission_id, record, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     stats.permissions_created += 1;
     Ok(())
 }
