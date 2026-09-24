@@ -455,7 +455,7 @@ async fn delete_entity_now(
     let backend = system
         .backend_for_table(table)
         .map_err(|e| map_err(kind, resource_id, operation, e))?;
-    match valence::delete_record(backend, table, bare, valence::use_!(r#"When **Gauge** finishes tearing down a **resource permission bundle**, we **delete the leftover group or table row** from storage so cleanup completes. Operators and resource teardown use this path."#)).await {
+    match valence::delete_record(backend.as_ref(), table, bare, valence::use_!(r#"When **Gauge** finishes tearing down a **resource permission bundle**, we **delete the leftover group or table row** from storage so cleanup completes. Operators and resource teardown use this path."#)).await {
         Ok(()) | Err(valence::Error::NotFound(_)) => {}
         Err(e) => return Err(map_err(kind, resource_id, operation, e)),
     }
@@ -517,7 +517,7 @@ async fn delete_permission_group_row(
                 .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?;
         }
     }
-    valence::delete_record(backend, "permission_group", record_id, valence::use_!(r#"When **Gauge** finishes tearing down a **resource permission bundle**, we **delete the leftover group or table row** from storage so cleanup completes. Operators and resource teardown use this path."#))
+    valence::delete_record(backend.as_ref(), "permission_group", record_id, valence::use_!(r#"When **Gauge** finishes tearing down a **resource permission bundle**, we **delete the leftover group or table row** from storage so cleanup completes. Operators and resource teardown use this path."#))
         .await
         .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?;
     valence::read_cache::invalidate("permission_group", record_id);

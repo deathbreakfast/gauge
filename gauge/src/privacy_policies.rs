@@ -291,7 +291,7 @@ async fn raw_get_json(
     let backend = v
         .backend_for_table(table)
         .map_err(|e| anyhow::anyhow!("resolve {table} backend: {e}"))?;
-    valence::get_record(backend, table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    valence::get_record(backend.as_ref(), table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read {table}: {e}"))
 }
@@ -466,7 +466,7 @@ async fn actor_in_super_user_group(actor: &Actor, v: &Valence) -> valence::Resul
     let backend = system
         .backend_for_table("permission_group")
         .map_err(|e| Error::Privacy(format!("Policy super-group backend resolve failed: {e}")))?;
-    let Some(row) = valence::get_record(backend, "permission_group", SUPER_USER_GROUP_ID, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    let Some(row) = valence::get_record(backend.as_ref(), "permission_group", SUPER_USER_GROUP_ID, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| Error::Privacy(format!("Policy super-group lookup failed: {e}")))?
     else {

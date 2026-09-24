@@ -66,7 +66,7 @@ pub async fn require_raw_record(table: &str, id: &str, v: &Valence) -> anyhow::R
     let backend = v
         .backend_for_table(table)
         .map_err(|e| anyhow::anyhow!("resolve backend for {table}: {e}"))?;
-    let row = valence::get_record(backend, table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    let row = valence::get_record(backend.as_ref(), table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read {table}: {e}"))?;
     if row.is_none() {
@@ -137,7 +137,7 @@ pub async fn get_permission_raw(id: &str, v: &Valence) -> anyhow::Result<Option<
     let backend = v
         .backend_for_table("permission")
         .map_err(|e| anyhow::anyhow!("resolve permission backend: {e}"))?;
-    match valence::get_record(backend, "permission", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    match valence::get_record(backend.as_ref(), "permission", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission: {e}"))?
     {
@@ -158,7 +158,7 @@ pub async fn get_group_raw(id: &str, v: &Valence) -> anyhow::Result<Option<Permi
     let backend = v
         .backend_for_table("permission_group")
         .map_err(|e| anyhow::anyhow!("resolve permission_group backend: {e}"))?;
-    match valence::get_record(backend, "permission_group", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    match valence::get_record(backend.as_ref(), "permission_group", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_group: {e}"))?
     {
@@ -178,7 +178,7 @@ pub async fn get_request_raw(id: &str, v: &Valence) -> anyhow::Result<Option<Per
     let backend = v
         .backend_for_table("permission_request")
         .map_err(|e| anyhow::anyhow!("resolve permission_request backend: {e}"))?;
-    match valence::get_record(backend, "permission_request", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    match valence::get_record(backend.as_ref(), "permission_request", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_request: {e}"))?
     {
@@ -195,7 +195,7 @@ pub async fn get_domain_raw(id: &str, v: &Valence) -> anyhow::Result<Option<Perm
     let backend = v
         .backend_for_table("permission_domain")
         .map_err(|e| anyhow::anyhow!("resolve permission_domain backend: {e}"))?;
-    match valence::get_record(backend, "permission_domain", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    match valence::get_record(backend.as_ref(), "permission_domain", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_domain: {e}"))?
     {
@@ -234,7 +234,7 @@ pub async fn get_user_principal_raw(
     let backend = v
         .backend_for_table("permission_user_principal")
         .map_err(|e| anyhow::anyhow!("resolve permission_user_principal backend: {e}"))?;
-    match valence::get_record(backend, "permission_user_principal", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    match valence::get_record(backend.as_ref(), "permission_user_principal", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_user_principal: {e}"))?
     {
@@ -252,7 +252,7 @@ pub async fn get_group_principal_raw(
     let backend = v
         .backend_for_table("permission_group_principal")
         .map_err(|e| anyhow::anyhow!("resolve permission_group_principal backend: {e}"))?;
-    match valence::get_record(backend, "permission_group_principal", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    match valence::get_record(backend.as_ref(), "permission_group_principal", id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_group_principal: {e}"))?
     {

@@ -119,7 +119,7 @@ async fn raw_get_json(
     let backend = v
         .backend_for_table(table)
         .map_err(|e| anyhow::anyhow!("resolve {table} backend: {e}"))?;
-    valence::get_record(backend, table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
+    valence::get_record(backend.as_ref(), table, id, valence::use_!(r#"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."#))
         .await
         .map_err(|e| anyhow::anyhow!("read {table}: {e}"))
 }
