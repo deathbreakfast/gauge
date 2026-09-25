@@ -1,4 +1,4 @@
-//! UC3 field builders for gauge permission check logs.
+//! Spectra event field builders for gauge permission check logs.
 
 use serde_json::{json, Value};
 

@@ -1,4 +1,4 @@
-//! Gauge permission-check Spectra telemetry (UC1 + UC3).
+//! Gauge permission-check Spectra telemetry (metrics and events).
 //!
 //! [`record_permission_check`] is the choke-point emitter used by
 //! [`crate::service::actor_can`] / [`crate::service::user_can`].
