@@ -142,6 +142,170 @@ async fn domain_create_list_get_happy_path() {
     assert_eq!(detail.id, domain_id);
     assert_eq!(detail.name, "Ops");
     assert_eq!(detail.description, "operations");
+    assert!(
+        detail
+            .owner_users
+            .iter()
+            .any(|o| o.id == "owner" || o.id.contains("owner")),
+        "create_domain must attach creator as owner; got {:?}",
+        detail.owner_users
+    );
+    assert!(!detail.resource_scoped);
+}
+
+#[tokio::test]
+async fn domain_owner_can_update_and_outsider_cannot_sad() {
+    let system = test_valence(Actor::System {
+        operation: "domain_owner_update".to_string(),
+    })
+    .await;
+    seed_user("owner", "owner@example.com", &system).await;
+    seed_user("outsider", "outsider@example.com", &system).await;
+    let owner_ctx = system.with_actor(Actor::User {
+        user_id: "owner".to_string(),
+    });
+    let outsider_ctx = system.with_actor(Actor::User {
+        user_id: "outsider".to_string(),
+    });
+
+    let created = service::create_domain(
+        PermissionDomainCreateInput {
+            name: "OwnerDomain".to_string(),
+            description: "owned".to_string(),
+        },
+        &owner_ctx,
+    )
+    .await
+    .expect("create domain");
+    let domain_id = record_pk_id(created.id());
+
+    service::update_domain(
+        &domain_id,
+        "OwnerDomainRenamed".to_string(),
+        "updated".to_string(),
+        &owner_ctx,
+    )
+    .await
+    .expect("owner update");
+
+    let err = service::update_domain(
+        &domain_id,
+        "Hijack".to_string(),
+        "nope".to_string(),
+        &outsider_ctx,
+    )
+    .await
+    .expect_err("outsider update");
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("not authorized") || msg.contains("denied") || msg.contains("access"),
+        "got {err}"
+    );
+}
+
+#[tokio::test]
+async fn domain_cannot_remove_last_owner_sad() {
+    let system = test_valence(Actor::System {
+        operation: "domain_last_owner".to_string(),
+    })
+    .await;
+    seed_user("owner", "owner@example.com", &system).await;
+    let owner_ctx = system.with_actor(Actor::User {
+        user_id: "owner".to_string(),
+    });
+
+    let created = service::create_domain(
+        PermissionDomainCreateInput {
+            name: "LastOwnerDomain".to_string(),
+            description: String::new(),
+        },
+        &owner_ctx,
+    )
+    .await
+    .expect("create domain");
+    let domain_id = record_pk_id(created.id());
+
+    let err = service::remove_domain_owner_user(&domain_id, "owner", &owner_ctx)
+        .await
+        .expect_err("remove last owner");
+    assert!(
+        err.to_string().to_lowercase().contains("last owner"),
+        "got {err}"
+    );
+}
+
+#[tokio::test]
+async fn domain_resource_scoped_rejects_human_mutate_sad() {
+    use chrono::Utc;
+    use gauge::generated::PermissionDomain;
+    use valence::Model;
+
+    let system = test_valence(Actor::System {
+        operation: "domain_resource_scoped".to_string(),
+    })
+    .await;
+    seed_user("owner", "owner@example.com", &system).await;
+    let owner_ctx = system.with_actor(Actor::User {
+        user_id: "owner".to_string(),
+    });
+
+    let scoped = PermissionDomain::new(
+        true,
+        Some("res-1".to_string()),
+        "ScopedDomain".to_string(),
+        Some("bundle plumbing".to_string()),
+        Utc::now(),
+        Utc::now(),
+    )
+    .expect("build scoped domain");
+    let created = PermissionDomain::upsert(
+        "scoped_domain_contract",
+        scoped,
+        &system,
+        valence::use_!(r"**Test:** Fixture **Permission Domain** save for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await
+    .expect("upsert scoped domain");
+    let domain_id = record_pk_id(created.id());
+
+    let rename_err = service::update_domain(
+        &domain_id,
+        "Nope".to_string(),
+        "blocked".to_string(),
+        &owner_ctx,
+    )
+    .await
+    .expect_err("rename resource-scoped");
+    assert!(
+        rename_err
+            .to_string()
+            .to_lowercase()
+            .contains("resource-scoped"),
+        "got {rename_err}"
+    );
+
+    let delete_err = service::delete_domain(&domain_id, &owner_ctx)
+        .await
+        .expect_err("delete resource-scoped");
+    assert!(
+        delete_err
+            .to_string()
+            .to_lowercase()
+            .contains("resource-scoped"),
+        "got {delete_err}"
+    );
+
+    seed_user("peer", "peer@example.com", &system).await;
+    let add_err = service::add_domain_owner_user(&domain_id, "peer", &owner_ctx)
+        .await
+        .expect_err("add owner on resource-scoped");
+    assert!(
+        add_err
+            .to_string()
+            .to_lowercase()
+            .contains("resource-scoped"),
+        "got {add_err}"
+    );
 }
 
 #[tokio::test]
@@ -1097,7 +1261,16 @@ async fn authenticated_user_cannot_mutate_domain_via_valence_sad() {
     .is_ok();
     assert!(
         !update_allowed,
-        "authenticated users must not update domains via Valence"
+        "non-owner authenticated users must not update domains via Valence"
+    );
+
+    let owner_update_allowed =
+        PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Update, &raw, &owner_ctx)
+            .await
+            .is_ok();
+    assert!(
+        owner_update_allowed,
+        "domain creator/owner must be allowed to update via Valence"
     );
 
     let hijacked = PermissionDomain::new(

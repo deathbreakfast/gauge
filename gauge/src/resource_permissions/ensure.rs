@@ -533,7 +533,8 @@ async fn delete_permission_group_row(
 /// the order required by `on_delete: Restrict` edges from permission → domain /
 /// `owners_group`. Allowed-principal M2M edges cascade with the permission rows.
 ///
-/// Runs as System internally because `permission_domain` delete is Super-User-only
+/// Runs as System internally because domain delete still requires Super User
+/// (or System via the Super User evaluator) for resource-scoped plumbing rows
 /// (same elevation pattern as [`ensure_resource_permission_bundle`]). Physical
 /// deletes use [`valence::delete_entity_now`] (and a group-row edge teardown helper)
 /// so Restrict blockers are gone before the next step.

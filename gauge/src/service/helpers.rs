@@ -466,63 +466,6 @@ fn json_to_history_string(value: &serde_json::Value) -> String {
     }
 }
 
-/// Parse legacy blob-shaped `diff_json` into field diffs (pre-RecordHistory rows).
-#[allow(dead_code)]
-pub fn parse_history_diffs(diff_json: &serde_json::Value) -> Vec<HistoryDiffItemDto> {
-    if let Some(items) = diff_json.get("fields").and_then(|v| v.as_array()) {
-        return items
-            .iter()
-            .map(|item| HistoryDiffItemDto {
-                field: item
-                    .get("field")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-                old_value: item
-                    .get("old_value")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null),
-                new_value: item
-                    .get("new_value")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null),
-            })
-            .collect();
-    }
-
-    let before = diff_json.get("before").and_then(|v| v.as_object());
-    let after = diff_json.get("after").and_then(|v| v.as_object());
-    let mut keys = std::collections::BTreeSet::new();
-    if let Some(map) = before {
-        keys.extend(map.keys().cloned());
-    }
-    if let Some(map) = after {
-        keys.extend(map.keys().cloned());
-    }
-
-    keys.into_iter()
-        .filter_map(|field| {
-            let old_value = before
-                .and_then(|m| m.get(&field))
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
-            let new_value = after
-                .and_then(|m| m.get(&field))
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
-            if old_value == new_value {
-                None
-            } else {
-                Some(HistoryDiffItemDto {
-                    field,
-                    old_value,
-                    new_value,
-                })
-            }
-        })
-        .collect()
-}
-
 pub async fn group_has_user(
     group: &PermissionGroup,
     user_ids: &[String],
@@ -627,6 +570,46 @@ pub async fn group_has_owner_user(
                 }
                 None => {}
             }
+        }
+    }
+    Ok(false)
+}
+
+pub async fn domain_has_owner_user(
+    domain: &PermissionDomain,
+    user_ids: &[String],
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    for owner in domain
+        .get_owners_record_ids(
+            v,
+            valence::use_!(r"When **Gauge** needs the **owners of a permission domain**, we **follow the owner edges** so the product can show owners on the domain detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."),
+        )
+        .await?
+    {
+        let owner_id = owner.id().to_string();
+        match principal_kind_from_record(&owner) {
+            Some(PrincipalKind::User) => {
+                if let Some(principal) = get_user_principal_raw(&owner_id, v).await? {
+                    let principal_user_id =
+                        valence::extract_id_from_record(principal.user()).unwrap_or_default();
+                    if user_ids.iter().any(|id| id == &principal_user_id) {
+                        return Ok(true);
+                    }
+                }
+            }
+            Some(PrincipalKind::Group) => {
+                if let Some(principal) = get_group_principal_raw(&owner_id, v).await? {
+                    let group_id =
+                        valence::extract_id_from_record(principal.group()).unwrap_or_default();
+                    if let Some(nested_owner_group) = get_group_raw(&group_id, v).await? {
+                        if group_has_owner_user(&nested_owner_group, user_ids, v).await? {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+            None => {}
         }
     }
     Ok(false)

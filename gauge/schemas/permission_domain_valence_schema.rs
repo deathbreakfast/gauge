@@ -1,4 +1,4 @@
-use crate::privacy_policies::SUPER_USER_GROUP_MEMBER;
+use crate::privacy_policies::{DOMAIN_OWNER_RECURSIVE, SUPER_USER_GROUP_MEMBER};
 use valence::prelude::*;
 use valence::privacy_policies::common::AUTHENTICATED;
 
@@ -21,12 +21,15 @@ valence_schema! {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
                 allow: [AUTHENTICATED],
             },
-            // No domain maintainers list yet — Super User only (System jobs pass via SUPER evaluator).
+            // Maintainers (owners) or Super User; session actor — no System elevate.
+            // System jobs still pass via SUPER_USER_GROUP_MEMBER.
             update: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
+                allow: [DOMAIN_OWNER_RECURSIVE],
             },
             delete: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
+                allow: [DOMAIN_OWNER_RECURSIVE],
             },
         },
 
@@ -49,6 +52,16 @@ valence_schema! {
             resource_id: {
                 r#type: FieldType::String,
                 required: false,
+            },
+        ],
+
+        connections: [
+            owners: {
+                table: "trait:PermissionPrincipal",
+                cardinality: ManyToMany,
+                edge_table: "permission_domain_owner_principal",
+                target_trait: "PermissionPrincipal",
+                on_delete: Cascade,
             },
         ],
     }

@@ -73,9 +73,14 @@
 //! kinds that predate [`crate::resource_permissions::ResourceKindDescriptor`].
 //! Products must declare their own `const ResourceKindDescriptor` and
 //! [`StaticPermissionGate`] / [`ResourcePermissionPolicy`] consts; do not add
-//! variants here. A later Gauge publish can retire the enum once golden tests and
-//! git consumers no longer need the variants. Until then, prefer
-//! [`ResourceKind::descriptor`] or a product descriptor over the enum itself.
+//! variants here. Prefer [`ResourceKind::descriptor`] or a product descriptor.
+//!
+//! **Still consumed in-workspace by:** Gluon tests / child privacy
+//! (`ResourceKind::GluonApp`), Neutrino / Nucleus wire-name asserts, and
+//! `gluon-campaign-ops` prefer-product consts in [`policy`](crate::resource_permissions::policy).
+//! [`revoke_umbrella_grants`](crate::resource_permissions::revoke_umbrella_grants)
+//! remains the live migration helper (e.g. Neutrino Chronon script). A later
+//! Gauge publish can retire the enum once those consumers migrate.
 
 mod actor_id;
 mod default_groups;

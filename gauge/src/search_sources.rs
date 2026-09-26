@@ -2,8 +2,9 @@
 
 #![allow(missing_docs)]
 
-#[cfg(feature = "ssr")]
-
+// Enum + SearchSourceKey are available without `ssr` so hydrate UI can build
+// picker source lists; provider inventory submits stay `#[cfg(feature = "ssr")]`
+// inside the macro expansion.
 uf_product_macros::define_search_sources! {
     enum PermissionSearchSourceId {
         User => {
