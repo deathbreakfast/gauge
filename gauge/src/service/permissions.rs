@@ -66,7 +66,7 @@ pub async fn create_permission(
         now,
     )?;
 
-    let created = Permission::create_used(permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
+    let created = Permission::create(permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     Ok(created)
 }
 
@@ -112,7 +112,7 @@ pub async fn update_permission(
         description
     };
     let saved = existing
-        .get_mutable_used(v, valence::use_!(r"In **Gauge permissions**, we **update this data** so later steps see the latest values for this workflow. Callers allowed for **Gauge permissions** use the updated data; this is not a public export of unrelated fields."))
+        .get_mutable(v, valence::use_!(r"In **Gauge permissions**, we **update this data** so later steps see the latest values for this workflow. Callers allowed for **Gauge permissions** use the updated data; this is not a public export of unrelated fields."))
         .set_owners_group(next_owners_group_id)?
         .set_domain(domain_record_id)?
         .set_name(name)?
@@ -155,7 +155,7 @@ pub async fn grant_permission_to_user(
 
     let principal = ensure_user_principal(user_id, system).await?;
     permission
-        .relate_to_allowed_principal_record(&require_model_id(principal.id(), "principal")?, system)
+        .relate_to_allowed_principal_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **grants a permission** in **Gauge**, we **write the allowed-principal edge** so that user or group may use the permission. Operators see the updated allow list on the permission detail."))
         .await?;
     persist_history_entry(
         v,
@@ -193,7 +193,8 @@ pub async fn revoke_permission_from_user(
         .unrelate_from_allowed_principal_record(
             &require_model_id(principal.id(), "principal")?,
             system,
-        )
+        valence::use_!(r"When an operator **revokes a permission** in **Gauge**, we **delete the allowed-principal edge** so that user or group no longer holds the grant. Operators see the updated allow list on the permission detail."),
+    )
         .await?;
     persist_history_entry(
         v,
@@ -229,7 +230,7 @@ pub async fn grant_permission_to_group(
 
     let principal = ensure_group_principal(group_id, system).await?;
     permission
-        .relate_to_allowed_principal_record(&require_model_id(principal.id(), "principal")?, system)
+        .relate_to_allowed_principal_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **grants a permission** in **Gauge**, we **write the allowed-principal edge** so that user or group may use the permission. Operators see the updated allow list on the permission detail."))
         .await?;
     persist_history_entry(
         v,
@@ -267,7 +268,8 @@ pub async fn revoke_permission_from_group(
         .unrelate_from_allowed_principal_record(
             &require_model_id(principal.id(), "principal")?,
             system,
-        )
+        valence::use_!(r"When an operator **revokes a permission** in **Gauge**, we **delete the allowed-principal edge** so that user or group no longer holds the grant. Operators see the updated allow list on the permission detail."),
+    )
         .await?;
     persist_history_entry(
         v,
@@ -305,7 +307,7 @@ pub async fn get_permission_detail(
     let mut allow_list = Vec::new();
     if reveal_sensitive {
         let mut seen = std::collections::HashSet::new();
-        for principal in permission.get_allowed_principals_record_ids(v).await? {
+        for principal in permission.get_allowed_principals_record_ids(v, valence::use_!(r"When **Gauge** checks or shows **who holds a permission**, we **follow the allowed-principal edges** so the product can build the allow list or decide whether you already have access. Editors see that list; permission checks use it only to allow or deny.")).await? {
             if let Some(reference) = principal_ref_from_record(&principal, v).await? {
                 let key = format!("{:?}:{}", reference.kind, reference.id);
                 if seen.insert(key) {
@@ -364,7 +366,7 @@ pub async fn get_group_detail(
     let mut members = Vec::new();
     if reveal_sensitive {
         let mut owner_seen = std::collections::HashSet::new();
-        for owner in group.get_owners_record_ids(v).await? {
+        for owner in group.get_owners_record_ids(v, valence::use_!(r"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny.")).await? {
             if let Some(reference) = principal_ref_from_record(&owner, v).await? {
                 let key = format!("{:?}:{}", reference.kind, reference.id);
                 if owner_seen.insert(key) {
@@ -374,7 +376,7 @@ pub async fn get_group_detail(
         }
 
         let mut member_seen = std::collections::HashSet::new();
-        for principal in group.get_members_record_ids(v).await? {
+        for principal in group.get_members_record_ids(v, valence::use_!(r"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny.")).await? {
             if let Some(reference) = principal_ref_from_record(&principal, v).await? {
                 let key = format!("{:?}:{}", reference.kind, reference.id);
                 if member_seen.insert(key) {
@@ -415,7 +417,7 @@ pub async fn list_permissions(
         .filter(|s| !s.is_empty());
 
     let mut out = Vec::new();
-    for permission in Permission::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await? {
+    for permission in Permission::query(v, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await? {
         if let Some(ref needle) = needle {
             let name = permission.name().to_lowercase();
             let description = permission
@@ -448,7 +450,7 @@ pub async fn list_groups(
         .filter(|s| !s.is_empty());
 
     let mut out = Vec::new();
-    for group in PermissionGroup::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await? {
+    for group in PermissionGroup::query(v, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors.")).await? {
         if let Some(ref needle) = needle {
             let name = group.name().to_lowercase();
             let description = group

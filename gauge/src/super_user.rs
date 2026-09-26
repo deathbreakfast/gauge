@@ -58,7 +58,7 @@ async fn ensure_user_principal(
             .ok_or_else(|| anyhow::anyhow!("user id missing after persist"))?,
     )?;
     let principal_id = user_principal_id(&user_id);
-    if let Some(existing) = PermissionUserPrincipal::get_used(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
+    if let Some(existing) = PermissionUserPrincipal::get(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it.")).await? {
         return Ok(existing);
     }
     let principal = PermissionUserPrincipal::new(
@@ -67,7 +67,7 @@ async fn ensure_user_principal(
             .clone(),
         canonical_user_id(&user_id),
     )?;
-    Ok(PermissionUserPrincipal::upsert_used(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?)
+    Ok(PermissionUserPrincipal::upsert(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?)
 }
 
 /// `true` when the request actor is a system actor or a (possibly transitive) member
@@ -118,7 +118,7 @@ pub async fn ensure_super_user_group(system: &Valence) -> anyhow::Result<Permiss
     }
 
     let now = Utc::now();
-    let created = PermissionGroup::upsert_used(
+    let created = PermissionGroup::upsert(
         SUPER_USER_GROUP_ID,
         PermissionGroup::new(
             SUPER_USER_GROUP_NAME.to_string(),
@@ -135,7 +135,7 @@ pub async fn ensure_super_user_group(system: &Valence) -> anyhow::Result<Permiss
 }
 
 async fn warn_duplicate_super_user_name_groups(system: &Valence) -> anyhow::Result<()> {
-    let groups = PermissionGroup::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    let groups = PermissionGroup::query(system, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(SUPER_USER_GROUP_NAME.to_string()))
         .await?;
     let foreign = groups
@@ -169,16 +169,21 @@ async fn sync_eligible_roles_into_super_group(
     system: &Valence,
     super_group: &PermissionGroup,
 ) -> anyhow::Result<()> {
-    let role_memberships = lepton::generated::AccountMembership::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Account Membership** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    let role_memberships = lepton::generated::AccountMembership::query(system, valence::use_!(r"In **Gauge permissions**, we **list Account Membership** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_role(StringPredicate::Equals("owner".to_string()))
         .union(
-            lepton::generated::AccountMembership::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Account Membership** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+            lepton::generated::AccountMembership::query(system, valence::use_!(r"In **Gauge permissions**, we **list Account Membership** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
                 .where_role(StringPredicate::Equals("super_admin".to_string())),
         )
         .await?;
 
     for membership in role_memberships {
-        let user = membership.get_user(system).await?;
+        let user = membership
+            .get_user(
+                system,
+                valence::use_!(r"When Gauge **syncs Super User members from account roles**, we **follow each membership’s user link** so eligible owners and super-admins can be added to the Super User group. Operators see the updated Super User membership list."),
+            )
+            .await?;
         ensure_user_in_super_group(super_group, &user, system).await?;
     }
 
@@ -218,7 +223,7 @@ pub async fn seed_super_user_member_by_email(
     super_group: &PermissionGroup,
     email: &str,
 ) -> anyhow::Result<()> {
-    let email_rows = lepton::generated::AccountEmail::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Account Email** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    let email_rows = lepton::generated::AccountEmail::query(system, valence::use_!(r"In **Gauge permissions**, we **list Account Email** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_address(StringPredicate::Equals(email.to_string()))
         .await?;
     if email_rows.is_empty() {
@@ -228,7 +233,7 @@ pub async fn seed_super_user_member_by_email(
         let Some(email_id) = row.id().cloned() else {
             continue;
         };
-        let Some(user) = lepton::generated::User::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list User** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+        let Some(user) = lepton::generated::User::query(system, valence::use_!(r"In **Gauge permissions**, we **list User** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
             .where_primary_email(valence::RecordPredicate::Equals(email_id))
             .first()
             .await?
@@ -303,7 +308,7 @@ async fn ensure_user_in_super_group(
     system: &Valence,
 ) -> anyhow::Result<()> {
     let owner_ids: HashSet<String> = super_group
-        .get_owners_record_ids(system)
+        .get_owners_record_ids(system, valence::use_!(r"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."))
         .await?
         .into_iter()
         .filter_map(|rid| {
@@ -326,12 +331,13 @@ async fn ensure_user_in_super_group(
                     .id()
                     .ok_or_else(|| anyhow::anyhow!("principal id missing after persist"))?,
                 system,
-            )
+        valence::use_!(r"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."),
+    )
             .await?;
     }
 
     let member_ids: HashSet<String> = super_group
-        .get_members_record_ids(system)
+        .get_members_record_ids(system, valence::use_!(r"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny."))
         .await?
         .into_iter()
         .map(|rid| rid.id().to_string())
@@ -349,7 +355,8 @@ async fn ensure_user_in_super_group(
                     .id()
                     .ok_or_else(|| anyhow::anyhow!("principal id missing after persist"))?,
                 system,
-            )
+        valence::use_!(r"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."),
+    )
             .await?;
     }
 
@@ -363,8 +370,7 @@ async fn get_user_principal_raw(
     let backend = system
         .backend_for_table("permission_user_principal")
         .map_err(|e| anyhow::anyhow!("resolve permission_user_principal backend: {e}"))?;
-    match backend
-        .get_record("permission_user_principal", id)
+    match valence::get_record(backend.as_ref(), "permission_user_principal", id, valence::use_!(r"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_user_principal: {e}"))?
     {
@@ -382,8 +388,7 @@ async fn get_group_principal_raw(
     let backend = system
         .backend_for_table("permission_group_principal")
         .map_err(|e| anyhow::anyhow!("resolve permission_group_principal backend: {e}"))?;
-    match backend
-        .get_record("permission_group_principal", id)
+    match valence::get_record(backend.as_ref(), "permission_group_principal", id, valence::use_!(r"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_group_principal: {e}"))?
     {
@@ -398,8 +403,7 @@ async fn get_group_raw(id: &str, system: &Valence) -> anyhow::Result<Option<Perm
     let backend = system
         .backend_for_table("permission_group")
         .map_err(|e| anyhow::anyhow!("resolve permission_group backend: {e}"))?;
-    match backend
-        .get_record("permission_group", id)
+    match valence::get_record(backend.as_ref(), "permission_group", id, valence::use_!(r"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."))
         .await
         .map_err(|e| anyhow::anyhow!("read permission_group: {e}"))?
     {
@@ -429,7 +433,7 @@ async fn group_has_recursive_member(
             continue;
         }
 
-        for owner in current.get_owners_record_ids(system).await? {
+        for owner in current.get_owners_record_ids(system, valence::use_!(r"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny.")).await? {
             let owner_id = owner.id().to_string();
             match principal_kind_label(&owner) {
                 Some("user") => {
@@ -453,7 +457,7 @@ async fn group_has_recursive_member(
                 _ => {}
             }
         }
-        for member in current.get_members_record_ids(system).await? {
+        for member in current.get_members_record_ids(system, valence::use_!(r"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny.")).await? {
             let member_table = member.table();
             let member_id = member.id().to_string();
             if member_id.is_empty() {

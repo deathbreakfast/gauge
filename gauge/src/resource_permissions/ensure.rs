@@ -44,7 +44,7 @@ async fn ensure_user_principal(
     user_id: &str,
 ) -> Result<PermissionUserPrincipal, ResourcePermissionError> {
     let uid = canonical_user_id(user_id);
-    let user = lepton::generated::User::get_used(&uid, system, valence::use_!(r"In **Gauge permissions**, we **load User** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    let user = lepton::generated::User::get(&uid, system, valence::use_!(r"In **Gauge permissions**, we **load User** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| ResourcePermissionError::service("user", &uid, "get_user", e))?
         .ok_or_else(|| {
@@ -64,7 +64,7 @@ async fn ensure_user_principal(
         )
     })?;
     let principal_id = format!("user:{uid}");
-    if let Some(existing) = PermissionUserPrincipal::get_used(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if let Some(existing) = PermissionUserPrincipal::get(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission User Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| ResourcePermissionError::service("user", &uid, "get_principal", e))?
     {
@@ -72,7 +72,7 @@ async fn ensure_user_principal(
     }
     let principal = PermissionUserPrincipal::new(user_thing, uid.clone())
         .map_err(|e| ResourcePermissionError::service("user", &uid, "new_principal", e))?;
-    PermissionUserPrincipal::upsert_used(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+    PermissionUserPrincipal::upsert(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission User Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
         .await
         .map_err(|e| ResourcePermissionError::service("user", &uid, "upsert_principal", e))
 }
@@ -82,7 +82,7 @@ async fn add_owner_user(
     group_id: &str,
     user_id: &str,
 ) -> Result<(), ResourcePermissionError> {
-    let group = PermissionGroup::get_used(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    let group = PermissionGroup::get(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| ResourcePermissionError::service("owners", group_id, "get_group", e))?
         .ok_or_else(|| {
@@ -102,7 +102,7 @@ async fn add_owner_user(
             anyhow::anyhow!("principal id missing"),
         )
     })?;
-    match group.relate_to_owner_record(&pid, system).await {
+    match group.relate_to_owner_record(&pid, system, valence::use_!(r"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail.")).await {
         Ok(()) => Ok(()),
         Err(e) => {
             let msg = e.to_string();
@@ -134,7 +134,7 @@ async fn ensure_permission_row(
     let name = permission_name(kind, resource_id, action);
     let perm_id = permission_record_id(kind, resource_id, action);
 
-    if Permission::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    if Permission::query(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(name.clone()))
         .limit(1)
         .first()
@@ -145,7 +145,7 @@ async fn ensure_permission_row(
         return Ok(name);
     }
 
-    if Permission::get_used(&perm_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if Permission::get(&perm_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err(kind, resource_id, "get_permission", e))?
         .is_some()
@@ -169,7 +169,7 @@ async fn ensure_permission_row(
         now,
     )
     .map_err(|e| map_err(kind, resource_id, "new_permission", e))?;
-    Permission::upsert_used(&perm_id, permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+    Permission::upsert(&perm_id, permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
         .await
         .map_err(|e| map_err(kind, resource_id, "upsert_permission", e))?;
     Ok(name)
@@ -207,7 +207,7 @@ async fn ensure_domain(
     dom_id: &str,
     display: &str,
 ) -> Result<RecordId, ResourcePermissionError> {
-    let domain = if let Some(existing) = PermissionDomain::get_used(dom_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Domain** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    let domain = if let Some(existing) = PermissionDomain::get(dom_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Domain** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err(kind, resource_id, "get_domain", e))?
     {
@@ -224,7 +224,7 @@ async fn ensure_domain(
             now,
         )
         .map_err(|e| map_err(kind, resource_id, "new_domain", e))?;
-        let created = PermissionDomain::upsert_used(dom_id, d, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+        let created = PermissionDomain::upsert(dom_id, d, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
             .await
             .map_err(|e| map_err(kind, resource_id, "upsert_domain", e))?;
         debug!("[permission] domain created id={dom_id}");
@@ -249,7 +249,7 @@ async fn ensure_owners_group(
     display: &str,
     maintainer: &str,
 ) -> Result<(), ResourcePermissionError> {
-    let existed = PermissionGroup::get_used(own_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    let existed = PermissionGroup::get(own_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err(kind, resource_id, "get_owners_group", e))?
         .is_some();
@@ -262,7 +262,7 @@ async fn ensure_owners_group(
             now,
         )
         .map_err(|e| map_err(kind, resource_id, "new_owners_group", e))?;
-        PermissionGroup::upsert_used(own_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+        PermissionGroup::upsert(own_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
             .await
             .map_err(|e| map_err(kind, resource_id, "upsert_owners_group", e))?;
         // First owner: chicken-and-egg — no owners yet, so GROUP_OWNER_RECURSIVE cannot pass.
@@ -303,7 +303,7 @@ async fn grant_action_to_umbrellas(
     }
     for group_id in umbrella_grants(kind, action) {
         // Soft: group may be missing if host skipped catalog seed; skip with debug.
-        if PermissionGroup::get_used(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+        if PermissionGroup::get(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
             .await
             .map_err(|e| map_err(kind, resource_id, "get_umbrella", e))?
             .is_none()
@@ -455,7 +455,7 @@ async fn delete_entity_now(
     let backend = system
         .backend_for_table(table)
         .map_err(|e| map_err(kind, resource_id, operation, e))?;
-    match backend.delete_record(table, bare).await {
+    match valence::delete_record(backend.as_ref(), table, bare, valence::use_!(r"When **Gauge** finishes tearing down a **resource permission bundle**, we **delete the leftover group or table row** from storage so cleanup completes. Operators and resource teardown use this path.")).await {
         Ok(()) | Err(valence::Error::NotFound(_)) => {}
         Err(e) => return Err(map_err(kind, resource_id, operation, e)),
     }
@@ -476,10 +476,15 @@ async fn delete_permission_group_row(
     resource_id: &str,
 ) -> Result<(), ResourcePermissionError> {
     let record_id = own_id.trim();
-    if valence::query::QueryCore::get_record_json("permission_group", record_id, system)
-        .await
-        .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?
-        .is_none()
+    if valence::query::QueryCore::get_record_json(
+        "permission_group",
+        record_id,
+        system,
+        valence::use_!(r"When Gauge finishes removing owners and members from a **permission group**, we **load that group row once** to see whether it still exists before deleting it. The app uses this only to decide whether cleanup should continue; the row is not shown to a user on this path."),
+    )
+    .await
+    .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?
+    .is_none()
     {
         return Ok(());
     }
@@ -497,7 +502,7 @@ async fn delete_permission_group_row(
             .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?
         {
             system
-                .unrelate_edge(edge, &endpoint, &to)
+                .unrelate_edge(edge, &endpoint, &to, valence::use_!(r"When **Gauge** tears down a **permission group**, we **remove its owner and member edges** before deleting the group row so no orphaned links remain. Cleanup uses this only."))
                 .await
                 .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?;
         }
@@ -507,13 +512,12 @@ async fn delete_permission_group_row(
             .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?
         {
             system
-                .unrelate_edge(edge, &from, &endpoint)
+                .unrelate_edge(edge, &from, &endpoint, valence::use_!(r"When **Gauge** tears down a **permission group**, we **remove its owner and member edges** before deleting the group row so no orphaned links remain. Cleanup uses this only."))
                 .await
                 .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?;
         }
     }
-    backend
-        .delete_record("permission_group", record_id)
+    valence::delete_record(backend.as_ref(), "permission_group", record_id, valence::use_!(r"When **Gauge** finishes tearing down a **resource permission bundle**, we **delete the leftover group or table row** from storage so cleanup completes. Operators and resource teardown use this path."))
         .await
         .map_err(|e| map_err(kind, resource_id, "delete_owners_group", e))?;
     valence::read_cache::invalidate("permission_group", record_id);
@@ -566,7 +570,7 @@ pub async fn delete_resource_permission_bundle(
         let name = permission_name(kind, &resource_id, action);
         let mut ids = std::collections::HashSet::new();
         ids.insert(perm_id);
-        if let Some(by_name) = Permission::query_used(&system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+        if let Some(by_name) = Permission::query(&system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
             .where_name(StringPredicate::Equals(name))
             .limit(1)
             .first()

@@ -36,7 +36,7 @@ pub async fn user_principal_label(
     } else {
         user_id
     };
-    let display = user.get_profile(v).await.ok().and_then(|profiles| {
+    let display = user.get_profile(v, valence::use_!(r"When we need a person's **display name**, we **follow the profile link** from their account so the product can show that name. Viewers who may read the profile see the name on the page that asked for it.")).await.ok().and_then(|profiles| {
         profiles
             .into_iter()
             .next()
@@ -61,7 +61,7 @@ impl uf_search_core::SearchSourceProvider for PlatformUserSearchSource {
         Box::pin(async move {
             let query_lower = query_text.to_lowercase();
             // InMemory backends only apply equality WHERE; scan + filter Contains here.
-            let users = lepton::generated::User::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list User** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+            let users = lepton::generated::User::query(v, valence::use_!(r"In **Gauge permissions**, we **list User** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
                 .limit(max_results.saturating_mul(20).max(50))
                 .await?;
             let mut out = Vec::new();
@@ -109,7 +109,7 @@ impl uf_search_core::SearchSourceProvider for PermissionGroupSearchSource {
         Box::pin(async move {
             // InMemory backends only apply equality WHERE clauses; filter Contains
             // in-process so pickers work across mem/sqlite/surreal.
-            let groups = crate::generated::PermissionGroup::query_used(v, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+            let groups = crate::generated::PermissionGroup::query(v, valence::use_!(r"In **Gauge permissions**, we **list Permission Group** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
                 .limit(max_results.saturating_mul(20).max(50))
                 .await?;
             let query_lower = query_text.to_lowercase();

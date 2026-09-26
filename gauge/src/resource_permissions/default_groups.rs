@@ -30,7 +30,7 @@ async fn ensure_standalone_group(
     display_name: &str,
     description: &str,
 ) -> Result<(), ResourcePermissionError> {
-    if PermissionGroup::get_used(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if PermissionGroup::get(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err("bootstrap", "", "get_group", e))?
         .is_some()
@@ -46,7 +46,7 @@ async fn ensure_standalone_group(
         now,
     )
     .map_err(|e| map_err("bootstrap", "", "new_group", e))?;
-    PermissionGroup::upsert_used(group_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+    PermissionGroup::upsert(group_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
         .await
         .map_err(|e| map_err("bootstrap", "", "upsert_group", e))?;
     info!("[permission] default_groups group_id={group_id} outcome=created");
@@ -57,7 +57,7 @@ async fn ensure_group_principal(
     system: &Valence,
     group_id: &str,
 ) -> Result<PermissionGroupPrincipal, ResourcePermissionError> {
-    let group = PermissionGroup::get_used(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    let group = PermissionGroup::get(group_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err("bootstrap", group_id, "get_group", e))?
         .ok_or_else(|| {
@@ -77,7 +77,7 @@ async fn ensure_group_principal(
         )
     })?;
     let principal_id = format!("permission_group:{group_id}");
-    if let Some(p) = PermissionGroupPrincipal::get_used(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if let Some(p) = PermissionGroupPrincipal::get(&principal_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Group Principal** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err("bootstrap", group_id, "get_group_principal", e))?
     {
@@ -85,7 +85,7 @@ async fn ensure_group_principal(
     }
     let principal = PermissionGroupPrincipal::new(group_thing, group_id.to_string())
         .map_err(|e| map_err("bootstrap", group_id, "new_group_principal", e))?;
-    PermissionGroupPrincipal::upsert_used(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+    PermissionGroupPrincipal::upsert(&principal_id, principal, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
         .await
         .map_err(|e| map_err("bootstrap", group_id, "upsert_group_principal", e))
 }
@@ -95,7 +95,7 @@ pub(super) async fn grant_named_permission_to_group(
     group_id: &str,
     permission_name: &str,
 ) -> Result<(), ResourcePermissionError> {
-    let Some(perm) = Permission::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    let Some(perm) = Permission::query(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(permission_name.to_string()))
         .limit(1)
         .first()
@@ -120,7 +120,7 @@ pub(super) async fn grant_named_permission_to_group(
         )
     })?;
 
-    match perm.relate_to_allowed_principal_record(&pid, system).await {
+    match perm.relate_to_allowed_principal_record(&pid, system, valence::use_!(r"When an operator **grants a permission** in **Gauge**, we **write the allowed-principal edge** so that user or group may use the permission. Operators see the updated allow list on the permission detail.")).await {
         Ok(()) => Ok(()),
         Err(e) => {
             let msg = e.to_string();
@@ -155,7 +155,7 @@ async fn ensure_coarse_create_permission(
     )
     .await?;
 
-    if PermissionDomain::get_used(spec.domain_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Domain** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if PermissionDomain::get(spec.domain_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Domain** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err("bootstrap", "", "get_domain", e))?
         .is_none()
@@ -170,12 +170,12 @@ async fn ensure_coarse_create_permission(
             now,
         )
         .map_err(|e| map_err("bootstrap", "", "new_domain", e))?;
-        PermissionDomain::upsert_used(spec.domain_id, domain, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+        PermissionDomain::upsert(spec.domain_id, domain, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Domain** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
             .await
             .map_err(|e| map_err("bootstrap", "", "upsert_domain", e))?;
     }
 
-    if Permission::get_used(spec.permission_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
+    if Permission::get(spec.permission_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err("bootstrap", "", "get_permission", e))?
         .is_some()
@@ -184,7 +184,7 @@ async fn ensure_coarse_create_permission(
     }
 
     // Idempotent by name as well.
-    if Permission::query_used(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    if Permission::query(system, valence::use_!(r"In **Gauge permissions**, we **list Permission** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_name(StringPredicate::Equals(spec.permission_name.to_string()))
         .limit(1)
         .first()
@@ -206,7 +206,7 @@ async fn ensure_coarse_create_permission(
         now,
     )
     .map_err(|e| map_err("bootstrap", "", "new_create_permission", e))?;
-    Permission::upsert_used(spec.permission_id, permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+    Permission::upsert(spec.permission_id, permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
         .await
         .map_err(|e| map_err("bootstrap", "", "upsert_create_permission", e))?;
     Ok(())

@@ -256,16 +256,6 @@ export CARGO_TARGET_DIR=target-gauge
 RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p gauge --features ssr --no-deps
 ```
 
-Guide-contract audit (after `cargo doc`; use an **absolute** `--doc-root`):
-
-```bash
-CONTRACT=~/unified-field/uf-docs-guide-contracts/workspaces/gauge
-python3 ~/.cursor/skills/uf-high-signal-docs/guide_audit.py \
-  "$CONTRACT/doc-guide-spec.toml" \
-  --doc-root "$PWD/target-gauge/doc" \
-  --freeze "$CONTRACT/doc-guide-freeze.json"
-```
-
 `gauge-app` rustdoc lives in the sibling gauge-uf-app workspace (`target-gauge-uf-app`)
 and is pin-dependent on Orbital / `uf-product`. Prefer the `gauge` gate above for
 docs CI signal.

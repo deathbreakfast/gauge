@@ -291,8 +291,7 @@ async fn raw_get_json(
     let backend = v
         .backend_for_table(table)
         .map_err(|e| anyhow::anyhow!("resolve {table} backend: {e}"))?;
-    backend
-        .get_record(table, id)
+    valence::get_record(backend.as_ref(), table, id, valence::use_!(r"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."))
         .await
         .map_err(|e| anyhow::anyhow!("read {table}: {e}"))
 }
@@ -313,7 +312,7 @@ async fn group_has_recursive_owner(
             continue;
         }
 
-        for owner in current.get_owners_record_ids(v).await? {
+        for owner in current.get_owners_record_ids(v, valence::use_!(r"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny.")).await? {
             let owner_id = owner.id().to_string();
             match owner.table() {
                 "permission_user_principal" => {
@@ -467,8 +466,7 @@ async fn actor_in_super_user_group(actor: &Actor, v: &Valence) -> valence::Resul
     let backend = system
         .backend_for_table("permission_group")
         .map_err(|e| Error::Privacy(format!("Policy super-group backend resolve failed: {e}")))?;
-    let Some(row) = backend
-        .get_record("permission_group", SUPER_USER_GROUP_ID)
+    let Some(row) = valence::get_record(backend.as_ref(), "permission_group", SUPER_USER_GROUP_ID, valence::use_!(r"When **Gauge** needs a **permission control-plane row by id**, we **read that record from storage** so the service can continue with the right domain, group, permission, or principal. The app uses the row for that workflow."))
         .await
         .map_err(|e| Error::Privacy(format!("Policy super-group lookup failed: {e}")))?
     else {
@@ -498,7 +496,7 @@ async fn group_has_recursive_member(
             continue;
         }
 
-        for owner in current.get_owners_record_ids(v).await? {
+        for owner in current.get_owners_record_ids(v, valence::use_!(r"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny.")).await? {
             let owner_id = owner.id().to_string();
             match owner.table() {
                 "permission_user_principal" => {
@@ -531,7 +529,7 @@ async fn group_has_recursive_member(
             }
         }
 
-        for member in current.get_members_record_ids(v).await? {
+        for member in current.get_members_record_ids(v, valence::use_!(r"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny.")).await? {
             let member_table = member.table();
             let member_id = member.id().to_string();
             if member_id.is_empty() {

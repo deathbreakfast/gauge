@@ -136,7 +136,7 @@ async fn seed_user(id: &str, email: &str, valence: &Valence) {
         now,
     )
     .expect("build user");
-    lepton::generated::User::upsert_used(id, user, valence, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save User** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
+    lepton::generated::User::upsert(id, user, valence, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save User** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."))
         .await
         .expect("upsert user");
 }
@@ -145,7 +145,7 @@ async fn seed_super_user_owner(
     system: &Valence,
     now: chrono::DateTime<Utc>,
 ) -> PermissionUserPrincipal {
-    let super_group = PermissionGroup::upsert_used(
+    let super_group = PermissionGroup::upsert(
         SUPER_USER_GROUP_ID,
         PermissionGroup::new(
             SUPER_USER_GROUP_NAME.to_string(),
@@ -159,7 +159,7 @@ async fn seed_super_user_owner(
     )
     .await
     .expect("bootstrap super user group");
-    let owner_principal = PermissionUserPrincipal::upsert_used(
+    let owner_principal = PermissionUserPrincipal::upsert(
         "user:owner-1",
         PermissionUserPrincipal::new(RecordId::new("user", "owner-1"), "owner-1".into())
             .expect("owner principal"),
@@ -169,11 +169,11 @@ async fn seed_super_user_owner(
     .await
     .expect("upsert owner principal");
     super_group
-        .relate_to_owner_record(owner_principal.id().expect("id"), system)
+        .relate_to_owner_record(owner_principal.id().expect("id"), system, valence::use_!(r"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."))
         .await
         .expect("relate super owner");
     super_group
-        .relate_to_member_record(owner_principal.id().expect("id"), system)
+        .relate_to_member_record(owner_principal.id().expect("id"), system, valence::use_!(r"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."))
         .await
         .expect("relate super member");
     owner_principal
@@ -184,7 +184,7 @@ async fn seed_demo_permission(
     owner_principal: &PermissionUserPrincipal,
     now: chrono::DateTime<Utc>,
 ) -> (String, Permission) {
-    let owners = PermissionGroup::upsert_used(
+    let owners = PermissionGroup::upsert(
         "deployers",
         PermissionGroup::new("Deployers".into(), Some("demo owners".into()), now, now)
             .expect("owners group"),
@@ -194,11 +194,11 @@ async fn seed_demo_permission(
     .await
     .expect("upsert owners");
     owners
-        .relate_to_owner_record(owner_principal.id().expect("id"), system)
+        .relate_to_owner_record(owner_principal.id().expect("id"), system, valence::use_!(r"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."))
         .await
         .expect("owners owner");
 
-    let domain = PermissionDomain::upsert_used(
+    let domain = PermissionDomain::upsert(
         "demo-domain",
         PermissionDomain::new(
             false,
@@ -216,7 +216,7 @@ async fn seed_demo_permission(
     .expect("upsert domain");
 
     let permission_name = "CanDeploy".to_string();
-    let permission = Permission::upsert_used(
+    let permission = Permission::upsert(
         "can-deploy",
         Permission::new(
             RecordId::new("user", "owner-1"),
@@ -261,7 +261,7 @@ async fn bootstrap_host() -> HostState {
         .expect("actor_can before grant");
     assert!(!denied, "member must be denied before grant");
 
-    let member_principal = PermissionUserPrincipal::upsert_used(
+    let member_principal = PermissionUserPrincipal::upsert(
         "user:member-1",
         PermissionUserPrincipal::new(RecordId::new("user", "member-1"), "member-1".into())
             .expect("member principal"),
@@ -271,7 +271,7 @@ async fn bootstrap_host() -> HostState {
     .await
     .expect("upsert member principal");
     permission
-        .relate_to_allowed_principal_record(member_principal.id().expect("id"), &system)
+        .relate_to_allowed_principal_record(member_principal.id().expect("id"), &system, valence::use_!(r"When an operator **grants a permission** in **Gauge**, we **write the allowed-principal edge** so that user or group may use the permission. Operators see the updated allow list on the permission detail."))
         .await
         .expect("grant member");
 
