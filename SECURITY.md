@@ -68,13 +68,24 @@ Permission and permission-group **update/delete** succeed only for:
 1. Super User (`SUPER_USER_GROUP_MEMBER`), or
 2. Maintainers on the owners list (`PERMISSION_OWNER_RECURSIVE` / `GROUP_OWNER_RECURSIVE`).
 
+Taxonomy **permission domain** update/delete succeed only for:
+
+1. Super User, or
+2. Maintainers on the domain `owners` list (`DOMAIN_OWNER_RECURSIVE`).
+
+`create_domain` stays authenticated so the creator becomes the first owner.
+Resource-scoped domains (from `ensure_resource_permission_bundle`) reject human
+rename, delete, and owner changes in `gauge::service`; System/Super User
+teardown still owns bundle cleanup.
+
 Create may stay authenticated so the creator becomes the first maintainer.
 Principal tables carry explicit AUTHENTICATED / SYSTEM_ONLY policies so ownership
-walks do not need elevation.
+walks do not need elevation. When you add Gauge-adjacent Valence shapes, set
+explicit policies on principal tables — an empty Valence policy allows.
 
 ## Super User role sync (F3)
 
-Chronon script `sync_super_user_membership_roles` aligns Super User group membership with Lepton `owner` / `super_admin` account roles. The job binds System **from the script context**, then calls `resync_eligible_super_user_group_members`. Hosts that mint those roles must authorize role assignment in Lepton; gauge treats Super User membership as the break-glass gate for taxonomy mutates.
+Chronon script `sync_super_user_membership_roles` aligns Super User group membership with Lepton `owner` / `super_admin` account roles. The job binds System **from the script context**, then calls `resync_eligible_super_user_group_members`. Hosts that mint those roles must authorize role assignment in Lepton; gauge treats Super User membership as the break-glass gate for taxonomy mutates when a domain has no owners yet.
 
 ## CSRF (host-delegated)
 
@@ -92,9 +103,10 @@ Expected contract when a host mounts `PermissionRoutes` from gauge-uf-app:
   `#[uf_product_macros::server(..., step_up)]` (window) or `step_up = "fresh"`:
   grant/revoke (`add_`/`remove_permission_*`), group membership and ownership,
   nested groups, `decide_permission_request`, `delete_permission` / `delete_group`,
-  `update_permission`, and `create_permission`. Routine taxonomy (`create_domain`,
-  `create_group`, `update_group`) and request create stay session + GaugeAdmin /
-  owner only. Membership and ownership changes on `super_user_group` require a
+  `update_permission`, `create_permission`, and domain owner add/remove / `delete_domain`.
+  Routine taxonomy (`create_domain`, `create_group`, `update_group`, `update_domain`)
+  and request create stay session + GaugeAdmin / owner only. Membership and ownership
+  changes on `super_user_group` require a
   fresh TOTP code on that call (window alone is not enough).
 - **Owner / Super User** enforced in Valence policies and mirrored in `gauge::service` for defense in depth.
 - **Super User** is pinned to well-known group id `super_user_group`; duplicate groups that reuse the display name do not grant privilege. `delete_group` and nested-group membership on that well-known id are blocked in `gauge::service`.

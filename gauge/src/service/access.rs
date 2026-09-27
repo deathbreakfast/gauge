@@ -1,14 +1,14 @@
 use valence::Valence;
 
-use crate::generated::{Permission, PermissionGroup};
+use crate::generated::{Permission, PermissionDomain, PermissionGroup};
 use crate::instrumentation::{PermissionCheckOutcome, PermissionCheckRecord};
 use crate::super_user::actor_is_super_user;
 use crate::types::{PermissionRequestTargetKind, PrincipalKind};
 
 use super::helpers::{
-    current_user_id, get_group_principal_raw, get_group_raw, get_permission_raw,
-    get_user_principal_raw, group_has_owner_user, group_has_user, permissions_named,
-    principal_kind_from_record, user_id_candidates,
+    current_user_id, domain_has_owner_user, get_group_principal_raw, get_group_raw,
+    get_permission_raw, get_user_principal_raw, group_has_owner_user, group_has_user,
+    permissions_named, principal_kind_from_record, user_id_candidates,
 };
 
 /// `true` when the current actor is a super user or an owner (direct or nested) of `group`.
@@ -23,6 +23,19 @@ pub async fn can_edit_group(group: &PermissionGroup, v: &Valence) -> anyhow::Res
     // Use system Valence for membership graph reads (typed user reads can miss trait fields).
     let system = v;
     group_has_owner_user(group, &candidates, system).await
+}
+
+/// `true` when the current actor is a super user or an owner (direct or nested) of `domain`.
+pub async fn can_edit_domain(domain: &PermissionDomain, v: &Valence) -> anyhow::Result<bool> {
+    if actor_is_super_user(v).await? {
+        return Ok(true);
+    }
+    let Some(user_id) = current_user_id(v) else {
+        return Ok(false);
+    };
+    let candidates = user_id_candidates(&user_id);
+    let system = v;
+    domain_has_owner_user(domain, &candidates, system).await
 }
 
 /// `true` when the current actor is a super user or an owner (direct or nested)

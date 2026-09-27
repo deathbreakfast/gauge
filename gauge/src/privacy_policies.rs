@@ -5,7 +5,8 @@ use std::any::Any;
 use valence::{Actor, ActorContext, Error, PolicyEvaluator, PrivacyOperation, Valence};
 
 use crate::generated::{
-    Permission, PermissionGroup, PermissionGroupPrincipal, PermissionUserPrincipal,
+    Permission, PermissionDomain, PermissionGroup, PermissionGroupPrincipal,
+    PermissionUserPrincipal,
 };
 use crate::super_user::SUPER_USER_GROUP_ID;
 
@@ -71,10 +72,43 @@ impl PolicyEvaluator for PermissionOwnerRecursive {
     }
 }
 
+/// Privacy policy allowing domain update/delete for owners, including owners
+/// inherited transitively through nested owner groups.
+#[derive(Debug, Clone)]
+pub struct DomainOwnerRecursive;
+
+#[async_trait]
+impl PolicyEvaluator for DomainOwnerRecursive {
+    fn name(&self) -> &'static str {
+        "perm::DOMAIN_OWNER_RECURSIVE"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Allow domain update/delete for recursive owners")
+    }
+
+    async fn evaluate(
+        &self,
+        op: PrivacyOperation,
+        record: &serde_json::Value,
+        actor: &dyn ActorContext,
+        v: &Valence,
+    ) -> valence::Result<bool> {
+        let actor = actor_from_context(actor)?;
+        domain_owner_recursive(op, record, &actor, v).await
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Shared [`GroupOwnerRecursive`] instance for use in schema `privacy_policies` declarations.
 pub const GROUP_OWNER_RECURSIVE: GroupOwnerRecursive = GroupOwnerRecursive;
 /// Shared [`PermissionOwnerRecursive`] instance for use in schema `privacy_policies` declarations.
 pub const PERMISSION_OWNER_RECURSIVE: PermissionOwnerRecursive = PermissionOwnerRecursive;
+/// Shared [`DomainOwnerRecursive`] instance for use in schema `privacy_policies` declarations.
+pub const DOMAIN_OWNER_RECURSIVE: DomainOwnerRecursive = DomainOwnerRecursive;
 /// Shared [`RequestTargetMaintainer`] instance for permission-request decide updates.
 pub const REQUEST_TARGET_MAINTAINER: RequestTargetMaintainer = RequestTargetMaintainer;
 /// Shared [`SuperUserGroupMember`] instance for use in schema `privacy_policies` declarations.
@@ -383,6 +417,88 @@ async fn group_owner_recursive(
     group_has_recursive_owner(&group, &user_ids, v)
         .await
         .map_err(|e| Error::Privacy(format!("Policy recursion failed for group {group_id}: {e}")))
+}
+
+async fn domain_owner_recursive(
+    op: PrivacyOperation,
+    record: &serde_json::Value,
+    actor: &Actor,
+    v: &Valence,
+) -> valence::Result<bool> {
+    if actor.is_system() {
+        return Ok(true);
+    }
+    if !matches!(op, PrivacyOperation::Update | PrivacyOperation::Delete) {
+        return Ok(false);
+    }
+
+    let user_ids = actor_candidates(actor);
+    if user_ids.is_empty() {
+        return Ok(false);
+    }
+    let Some(domain_id) = record_id(record) else {
+        return Ok(false);
+    };
+
+    let Some(row) = raw_get_json("permission_domain", &domain_id, v)
+        .await
+        .map_err(|e| Error::Privacy(format!("Policy lookup failed for domain {domain_id}: {e}")))?
+    else {
+        return Ok(false);
+    };
+    let domain: PermissionDomain = serde_json::from_value(row)
+        .map_err(|e| Error::Privacy(format!("Policy domain decode failed for {domain_id}: {e}")))?;
+
+    domain_has_recursive_owner(&domain, &user_ids, v)
+        .await
+        .map_err(|e| {
+            Error::Privacy(format!(
+                "Policy recursion failed for domain {domain_id}: {e}"
+            ))
+        })
+}
+
+async fn domain_has_recursive_owner(
+    domain: &PermissionDomain,
+    user_ids: &[String],
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    for owner in domain
+        .get_owners_record_ids(
+            v,
+            valence::use_!(r"When **Gauge** needs the **owners of a permission domain**, we **follow the owner edges** so the product can show owners on the domain detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."),
+        )
+        .await?
+    {
+        let owner_id = owner.id().to_string();
+        match owner.table() {
+            "permission_user_principal" => {
+                if let Some(row) = raw_get_json("permission_user_principal", &owner_id, v).await? {
+                    let principal: PermissionUserPrincipal = serde_json::from_value(row)?;
+                    let owner_user_id =
+                        valence::extract_id_from_record(principal.user()).unwrap_or_default();
+                    if user_ids.iter().any(|id| id == &owner_user_id) {
+                        return Ok(true);
+                    }
+                }
+            }
+            "permission_group_principal" => {
+                if let Some(row) = raw_get_json("permission_group_principal", &owner_id, v).await? {
+                    let principal: PermissionGroupPrincipal = serde_json::from_value(row)?;
+                    let owner_group_id =
+                        valence::extract_id_from_record(principal.group()).unwrap_or_default();
+                    if let Some(row) = raw_get_json("permission_group", &owner_group_id, v).await? {
+                        let owner_group: PermissionGroup = serde_json::from_value(row)?;
+                        if group_has_recursive_owner(&owner_group, user_ids, v).await? {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(false)
 }
 
 async fn permission_owner_recursive(

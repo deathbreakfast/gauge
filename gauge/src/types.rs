@@ -68,6 +68,13 @@ pub struct PermissionDomainDetailDto {
     pub name: String,
     /// Human-readable description.
     pub description: String,
+    /// Users who own/administer this taxonomy domain.
+    ///
+    /// Populated only for domain owners and Super User; empty otherwise.
+    /// Always empty for list responses.
+    pub owner_users: Vec<PrincipalRefDto>,
+    /// Whether this domain was created for a resource permission bundle.
+    pub resource_scoped: bool,
 }
 
 /// Full permission detail view, including its allow-list and domain context.
