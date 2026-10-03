@@ -242,8 +242,15 @@ Runtime GaugeAdmin deny (TM-SEC-09) is Layer 2 in gauge-uf-app-e2e:
 
 **Waived.** This workspace; no cloud resources or Criterion benches.
 Correctness is in-process against Valence in-memory storage (`MEM_ENGINE_ID`;
-gauge `DEFAULT_STORAGE`). Tests also alias `SQLITE_ENGINE_ID` for lepton `User`
-rows when needed.
+gauge `DEFAULT_STORAGE` on the `gauge` logical). Tests also alias
+`SQLITE_ENGINE_ID` for lepton `User` rows on the `default` logical.
+
+Hosts route gauge tables with `embedded_surreal::register_storage`, which
+registers the `gauge` logical under the backend's engine id and under the
+schemas' `mem` engine id. A router without the `mem:gauge` key falls back to
+its default backend. `register_storage_adds_backend_and_schema_engine_keys_happy_path`
+and `unregistered_router_does_not_resolve_gauge_sad` cover the helper
+(`cargo test -p gauge --features ssr --lib embedded_surreal`).
 
 ## Rustdoc
 

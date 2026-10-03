@@ -96,25 +96,19 @@ fn mem_router() -> Arc<DatabaseRouter> {
     register_backend_logical_names(
         &mut router,
         Arc::clone(&backend),
-        gauge::embedded_surreal::EMBEDDED_SURREAL_LOGICAL_NAMES,
+        &["default"],
         RegisterBackendLogicalNamesOptions {
             register_alias_engine_id: Some(SQLITE_ENGINE_ID),
         },
     );
-    router.register(
-        router_key(gauge::embedded_surreal::LOGICAL_NAME, SQLITE_ENGINE_ID),
-        backend,
-    );
+    gauge::embedded_surreal::register_storage(&mut router, backend);
     Arc::new(router)
 }
 
 fn valence_for(router: Arc<DatabaseRouter>, actor: Actor) -> Valence {
     Valence::builder()
         .database_router(router)
-        .default_backend_key(router_key(
-            gauge::embedded_surreal::LOGICAL_NAME,
-            MEM_ENGINE_ID,
-        ))
+        .default_backend_key(router_key("default", MEM_ENGINE_ID))
         .with_actor(actor)
         .build()
         .expect("valence build")
