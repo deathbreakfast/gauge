@@ -2,7 +2,7 @@
 
 Re-run after code or doc changes. This workspace is the **Gauge domain** repo
 (`gauge` crate only). The Leptos admin UI (`gauge-app` / `PermissionRoutes`) lives
-in the sibling **gauge-uf-app** composer repo under `L4-composers/gauge-uf-app`.
+in the sibling **gauge-uf-app** composer repo.
 Layer 1 covers the product-local service that backs permission/domain CRUD,
 grant/revoke, `actor_can` / `user_can`, and request/review.
 
@@ -102,8 +102,9 @@ cargo run -p embedded-gauge-host
 RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p gauge --features ssr --no-deps
 ```
 
-`product_surface` reads `L4-composers/gauge-uf-app` when present (local monorepo);
-each needle test **returns early** when that tree is absent so standalone uf-dev CI stays green.
+`product_surface` reads gauge-uf-app sources from `GAUGE_APP_SRC` (path to its
+`gauge-app/src`); each needle test **returns early** when that is unset so standalone
+uf-dev CI stays green.
 Domain contract suites above are the behavioral merge gate.
 
 Do not run `--all-targets` clippy on `gauge`: older smoke suites
@@ -148,7 +149,7 @@ From gauge-uf-app (see that repo’s `docs/VERIFICATION.md` and
 ```bash
 export CARGO_BUILD_JOBS=1
 export CARGO_TARGET_DIR=target-gauge-uf-app
-cd ~/unified-field/L4-composers/gauge-uf-app
+cd path/to/gauge-uf-app
 cd gauge-uf-app-e2e/end2end && npm ci && npx playwright install chromium && cd ../..
 cargo leptos end-to-end --project gauge-uf-app-e2e
 ```
@@ -242,8 +243,15 @@ Runtime GaugeAdmin deny (TM-SEC-09) is Layer 2 in gauge-uf-app-e2e:
 
 **Waived.** This workspace; no cloud resources or Criterion benches.
 Correctness is in-process against Valence in-memory storage (`MEM_ENGINE_ID`;
-gauge `DEFAULT_STORAGE`). Tests also alias `SQLITE_ENGINE_ID` for lepton `User`
-rows when needed.
+gauge `DEFAULT_STORAGE` on the `gauge` logical). Tests also alias
+`SQLITE_ENGINE_ID` for lepton `User` rows on the `default` logical.
+
+Hosts route gauge tables with `embedded_surreal::register_storage`, which
+registers the `gauge` logical under the backend's engine id and under the
+schemas' `mem` engine id. A router without the `mem:gauge` key falls back to
+its default backend. `register_storage_adds_backend_and_schema_engine_keys_happy_path`
+and `unregistered_router_does_not_resolve_gauge_sad` cover the helper
+(`cargo test -p gauge --features ssr --lib embedded_surreal`).
 
 ## Rustdoc
 

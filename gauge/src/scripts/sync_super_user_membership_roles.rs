@@ -5,6 +5,8 @@ use crate::super_user::resync_eligible_super_user_group_members;
 
 /// Periodically align Super User group membership with `owner` / `super_admin` account roles.
 ///
+/// Both are platform roles; a user's own account carries `member`.
+///
 /// Valence model `side_effects` cannot be registered on `account_membership` from this crate
 /// without a dependency cycle (`orbital-ssr` ↔ `gauge`); this Chronon job provides the same
 /// reactive outcome at the product boundary.

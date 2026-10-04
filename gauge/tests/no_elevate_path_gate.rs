@@ -71,6 +71,10 @@ const fn elevate_allowlist() -> &'static [(&'static str, &'static str)] {
             "scripts/migrate_principal_connections.rs",
             "one-shot principal edge migration",
         ),
+        (
+            "scripts/demote_personal_account_owners.rs",
+            "Chronon one-shot owner-to-member membership migration",
+        ),
     ]
 }
 

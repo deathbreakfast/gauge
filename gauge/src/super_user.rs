@@ -157,6 +157,10 @@ async fn warn_duplicate_super_user_name_groups(system: &Valence) -> anyhow::Resu
 
 /// Idempotently add every `owner` / `super_admin` account member to the Super User group.
 ///
+/// Both are platform roles. Lepton sign-up gives a user `member` on their own account;
+/// rows from before that change are fixed by
+/// [`demote_personal_account_owners_script`](crate::scripts::demote_personal_account_owners_script).
+///
 /// This is used by the [`sync_super_user_membership_roles`](crate::scripts::sync_super_user_membership_roles)
 /// Chronon job (scheduled) so membership stays aligned without relying on the one-shot
 /// `ensure_super_user_group` bootstrap script.
@@ -223,12 +227,25 @@ pub async fn seed_super_user_member_by_email(
     super_group: &PermissionGroup,
     email: &str,
 ) -> anyhow::Result<()> {
+    let users = users_with_primary_email(system, email).await?;
+    if users.is_empty() {
+        anyhow::bail!("no user found for email {email}");
+    }
+    for user in users {
+        ensure_user_in_super_group(super_group, &user, system).await?;
+    }
+    Ok(())
+}
+
+/// Lepton users whose primary email address is exactly `email`.
+pub(crate) async fn users_with_primary_email(
+    system: &Valence,
+    email: &str,
+) -> anyhow::Result<Vec<lepton::generated::User>> {
     let email_rows = lepton::generated::AccountEmail::query(system, valence::use_!(r"In **Gauge permissions**, we **list Account Email** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
         .where_address(StringPredicate::Equals(email.to_string()))
         .await?;
-    if email_rows.is_empty() {
-        anyhow::bail!("no user found for email {email}");
-    }
+    let mut users = Vec::new();
     for row in email_rows {
         let Some(email_id) = row.id().cloned() else {
             continue;
@@ -240,9 +257,9 @@ pub async fn seed_super_user_member_by_email(
         else {
             continue;
         };
-        ensure_user_in_super_group(super_group, &user, system).await?;
+        users.push(user);
     }
-    Ok(())
+    Ok(users)
 }
 
 /// Idempotently seed every address in `emails` into `super_group`.

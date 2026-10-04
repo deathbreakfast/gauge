@@ -7,6 +7,7 @@
 //! | Ensure Super User group (run-once) | [`ensure_super_user_group_script`] |
 //! | Sync Super User membership from roles | [`sync_super_user_membership_roles_script`] |
 //! | Migrate legacy principal edges | [`migrate_permission_principal_connections`] |
+//! | Switch sign-up `owner` memberships to `member` (run-once) | [`demote_personal_account_owners_script`] |
 //!
 //! Script entry points return [`anyhow::Result`] (Chronon / Valence aggregation).
 //! Domain Super User helpers used by scripts live under [`crate::super_user`].
@@ -22,10 +23,18 @@ pub mod ensure_super_user_group;
 #[cfg(feature = "ssr")]
 pub mod migrate_principal_connections;
 
+/// One-shot migration that switches sign-up `owner` memberships to `member`.
+#[cfg(feature = "ssr")]
+pub mod demote_personal_account_owners;
+
 /// Recurring (cron) script that syncs Super User group membership from account roles.
 #[cfg(feature = "ssr")]
 pub mod sync_super_user_membership_roles;
 
+#[cfg(feature = "ssr")]
+pub use demote_personal_account_owners::{
+    demote_personal_account_owners_script, demote_personal_account_owners_with_valence,
+};
 #[cfg(feature = "ssr")]
 pub use ensure_super_user_group::ensure_super_user_group_script;
 #[cfg(feature = "ssr")]

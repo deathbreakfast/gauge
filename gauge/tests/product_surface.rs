@@ -2,8 +2,9 @@
 //!
 //! Lives under the **gauge domain** crate so local monorepo CI can gate
 //! route/testid/auth/admin needles without compiling Orbital/turf UI.
-//! When `L4-composers/gauge-uf-app` is absent (standalone uf-dev CI), each
-//! test returns early — domain contract suites remain the merge gate.
+//! Set `GAUGE_APP_SRC` to a gauge-uf-app checkout's `gauge-app/src` to run
+//! them. When it is unset (standalone uf-dev CI), each test returns early —
+//! domain contract suites remain the merge gate.
 
 use std::fs;
 use std::path::PathBuf;
@@ -13,9 +14,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn composer_app_src() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../..")
-        .join("L4-composers/gauge-uf-app/gauge-app/src");
+    let path = PathBuf::from(std::env::var_os("GAUGE_APP_SRC")?);
     path.is_dir().then_some(path)
 }
 
