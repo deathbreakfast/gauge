@@ -1,4 +1,4 @@
-//! Emit UC1/UC3 rows for permission checks at the gauge service choke point.
+//! Emit Spectra metric and event rows for permission checks at the gauge service choke point.
 
 use std::cell::RefCell;
 
@@ -179,7 +179,7 @@ impl<'a> PermissionCheckRecord<'a> {
     }
 }
 
-/// Record UC1 counter + UC3 event for a permission check.
+/// Record Spectra counter + event for a permission check.
 pub fn record_permission_check(record: &PermissionCheckRecord<'_>) {
     PERMISSION_CHECK_CAPTURE.with(|slot| {
         if let Some(buf) = slot.borrow_mut().as_mut() {
