@@ -433,6 +433,123 @@ where
     })
 }
 
+/// Idempotently ensure the permission bundle for a resource that has no human
+/// maintainer, and grant its actions to an existing group.
+///
+/// For control-plane seeds that run as System before any user exists (for
+/// example a secret sealed from env at host boot). [`ensure_resource_permission_bundle`]
+/// needs a real user as maintainer; this variant makes the bundle's owners group
+/// hold the actions and grants the same actions to `grant_group_id`, so members
+/// of that group can use the resource through their own session without any
+/// elevation.
+///
+/// `actions` empty means the kind's default actions. Umbrella grants are not
+/// applied here, so a kind with [`UmbrellaPolicy::None`](super::UmbrellaPolicy)
+/// (Neutrino secrets) stays closed to its standing umbrella groups.
+///
+/// # Errors
+///
+/// [`ResourcePermissionError::InvalidResourceId`] when `resource_id` normalizes empty,
+/// [`ResourcePermissionError::GaugeService`] when `system` is not a System
+/// actor, when `grant_group_id` does not exist, or on Valence/Gauge failures.
+pub async fn ensure_resource_permission_bundle_for_group<K>(
+    system: &Valence,
+    kind: K,
+    resource_id: &str,
+    display_name: &str,
+    actions: &[ResourceAction],
+    grant_group_id: &str,
+) -> Result<ResourcePermissionBundle, ResourcePermissionError>
+where
+    K: Into<ResourceKindDescriptor>,
+{
+    let kind = kind.into();
+    let resource_id = resource_id.trim().to_string();
+    if normalize_id_fragment(&resource_id).is_empty() {
+        return Err(ResourcePermissionError::InvalidResourceId {
+            kind: kind.prefix.to_string(),
+        });
+    }
+    if !system.actor().is_system() {
+        return Err(map_err(
+            &kind,
+            &resource_id,
+            "requires_system_actor",
+            anyhow::anyhow!(
+                "group-owned bundles are control-plane seeds and need a System Valence"
+            ),
+        ));
+    }
+    if PermissionGroup::get(grant_group_id, system, valence::use_!(r"When a **host seeds a resource permission bundle for a group**, we **load that group** to confirm it exists before granting it access, so the grant never points at a missing group. Used only during host boot."))
+        .await
+        .map_err(|e| map_err(&kind, &resource_id, "get_grant_group", e))?
+        .is_none()
+    {
+        return Err(map_err(
+            &kind,
+            &resource_id,
+            "grant_group_missing",
+            anyhow::anyhow!("group {grant_group_id} not found"),
+        ));
+    }
+
+    let dom_id = domain_id(kind, &resource_id);
+    let own_id = owners_group_id(kind, &resource_id);
+    let display = if display_name.trim().is_empty() {
+        format!("{} {resource_id}", kind.display_label)
+    } else {
+        display_name.trim().to_string()
+    };
+    let actions = if actions.is_empty() {
+        kind.default_actions()
+    } else {
+        actions.to_vec()
+    };
+
+    let domain_rid = ensure_domain(system, &kind, &resource_id, &dom_id, &display).await?;
+    if PermissionGroup::get(&own_id, system, valence::use_!(r"When a **host seeds a resource permission bundle for a group**, we **load the bundle's owners group** to see whether it already exists, so re-running the seed does not create a second one. Used only during host boot."))
+        .await
+        .map_err(|e| map_err(&kind, &resource_id, "get_owners_group", e))?
+        .is_none()
+    {
+        let now = Utc::now();
+        let group = PermissionGroup::new(
+            format!("{display} owners"),
+            Some("Maintain ACL owners for this resource".to_string()),
+            now,
+            now,
+        )
+        .map_err(|e| map_err(&kind, &resource_id, "new_owners_group", e))?;
+        PermissionGroup::upsert(&own_id, group, system, valence::use_!(r"When a **host seeds a resource permission bundle for a group**, we **save the bundle's owners group** so the resource has a group to hold its actions. Used only during host boot."))
+            .await
+            .map_err(|e| map_err(&kind, &resource_id, "upsert_owners_group", e))?;
+    }
+
+    let mut permission_names = HashMap::new();
+    for action in actions {
+        let name = ensure_permission_row(
+            system,
+            &kind,
+            &resource_id,
+            action,
+            &domain_rid,
+            &own_id,
+            &display,
+            "system",
+        )
+        .await?;
+        grant_named_permission_to_group(system, &own_id, &name).await?;
+        grant_named_permission_to_group(system, grant_group_id, &name).await?;
+        permission_names.insert(action.as_str().to_string(), name);
+    }
+
+    Ok(ResourcePermissionBundle {
+        domain_id: dom_id,
+        owners_group_id: own_id,
+        permission_names,
+    })
+}
+
 /// Physically delete one schema row (permission / principal / domain teardown).
 ///
 /// Strips a matching `table:` prefix so colon-bearing primary keys such as

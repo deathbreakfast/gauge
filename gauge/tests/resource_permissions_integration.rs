@@ -6,9 +6,10 @@ mod common;
 
 use common::{seed_user, test_valence};
 use gauge::resource_permissions::{
-    delete_resource_permission_bundle, ensure_resource_permission_bundle, permission_name,
-    seed_resource_kind_catalog, ActorId, ResourceAction, ResourceKind, ResourcePermissionError,
-    ResourcePermissionPolicy, ResourcePermissionSpec, UmbrellaPolicy,
+    delete_resource_permission_bundle, ensure_group_granted_permission,
+    ensure_resource_permission_bundle, ensure_resource_permission_bundle_for_group,
+    permission_name, seed_resource_kind_catalog, ActorId, ResourceAction, ResourceKind,
+    ResourcePermissionError, ResourcePermissionPolicy, ResourcePermissionSpec, UmbrellaPolicy,
 };
 use gauge::service;
 use valence::{Actor, JsonActorContext, Model, PolicyEvaluator, PrivacyOperation};
@@ -1163,5 +1164,237 @@ async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()>
     fake.relate_to_member_record(stranger_principal.id().expect("pid"), &system, valence::use_!(r"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?;
     assert!(!service::actor_can(&stranger_v, &maintain).await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn group_owned_bundle_lets_member_reveal_without_elevation_and_denies_stranger(
+) -> anyhow::Result<()> {
+    let system = system_valence().await;
+    seed_neutrino_catalog(&system).await?;
+
+    let group_id = "lepton.delivery.admins";
+    let now = chrono::Utc::now();
+    gauge::generated::PermissionGroup::upsert(
+        group_id,
+        gauge::generated::PermissionGroup::new("Delivery admins".into(), None, now, now)?,
+        &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    let group = gauge::generated::PermissionGroup::get(group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?
+        .expect("group");
+
+    let member = "delivery_admin_u1";
+    seed_user(member, "delivery_admin_u1@example.test", &system).await;
+    let user = lepton::generated::User::get(member, &system, valence::use_!(r"**Test:** Fixture **User** load for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?
+        .expect("user");
+    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+        &format!("user:{member}"),
+        gauge::generated::PermissionUserPrincipal::new(
+            user.id().expect("id").clone(),
+            member.to_string(),
+        )?,
+        &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    group
+        .relate_to_member_record(principal.id().expect("pid"), &system, valence::use_!(r"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?;
+
+    let bundle = ensure_resource_permission_bundle_for_group(
+        &system,
+        ResourceKind::NeutrinoSecret,
+        "lepton-smtp-password",
+        "Lepton SMTP password",
+        &[ResourceAction::Reveal, ResourceAction::Edit],
+        group_id,
+    )
+    .await?;
+    let again = ensure_resource_permission_bundle_for_group(
+        &system,
+        ResourceKind::NeutrinoSecret,
+        "lepton-smtp-password",
+        "Lepton SMTP password",
+        &[ResourceAction::Reveal, ResourceAction::Edit],
+        group_id,
+    )
+    .await?;
+    assert_eq!(bundle.owners_group_id, again.owners_group_id, "idempotent");
+
+    let reveal = permission_name(
+        ResourceKind::NeutrinoSecret,
+        "lepton-smtp-password",
+        ResourceAction::Reveal,
+    );
+    let edit = permission_name(
+        ResourceKind::NeutrinoSecret,
+        "lepton-smtp-password",
+        ResourceAction::Edit,
+    );
+    let mv = user_valence(&system, member);
+    assert!(service::actor_can(&mv, &reveal).await?, "member reveals");
+    assert!(service::actor_can(&mv, &edit).await?, "member edits");
+
+    let stranger = "not_in_group_u2";
+    seed_user(stranger, "not_in_group_u2@example.test", &system).await;
+    let sv = user_valence(&system, stranger);
+    assert!(
+        !service::actor_can(&sv, &reveal).await?,
+        "stranger denied reveal"
+    );
+    assert!(
+        !service::actor_can(&sv, &edit).await?,
+        "stranger denied edit"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn group_owned_bundle_refuses_non_system_valence_and_missing_group_sad() -> anyhow::Result<()>
+{
+    let system = system_valence().await;
+    seed_neutrino_catalog(&system).await?;
+    let user = "plain_u3";
+    seed_user(user, "plain_u3@example.test", &system).await;
+    let uv = user_valence(&system, user);
+    let err = ensure_resource_permission_bundle_for_group(
+        &uv,
+        ResourceKind::NeutrinoSecret,
+        "x",
+        "x",
+        &[],
+        "any",
+    )
+    .await
+    .expect_err("session actor must not create a control-plane bundle");
+    assert!(err.to_string().contains("requires_system_actor"), "{err}");
+
+    let err = ensure_resource_permission_bundle_for_group(
+        &system,
+        ResourceKind::NeutrinoSecret,
+        "x",
+        "x",
+        &[],
+        "no.such.group",
+    )
+    .await
+    .expect_err("missing group");
+    assert!(err.to_string().contains("grant_group_missing"), "{err}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn app_admin_group_grants_permission_and_super_users_inherit_but_admins_do_not_escalate(
+) -> anyhow::Result<()> {
+    use gauge::super_user::{actor_is_super_user, ensure_super_user_group, SUPER_USER_GROUP_ID};
+
+    let system = system_valence().await;
+    ensure_super_user_group(&system).await?;
+
+    // The permission must exist before the group can be granted it.
+    let now = chrono::Utc::now();
+    let domain = gauge::generated::PermissionDomain::new(
+        false,
+        None,
+        "Lepton".into(),
+        Some("test domain".into()),
+        now,
+        now,
+    )?;
+    gauge::generated::PermissionDomain::upsert(
+        "lepton_test_domain",
+        domain,
+        &system,
+        valence::use_!(r"**Test:** Fixture **Permission Domain** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    let perm = gauge::generated::Permission::new(
+        valence::RecordId::new("user", "system"),
+        valence::RecordId::new("permission_group", SUPER_USER_GROUP_ID),
+        valence::RecordId::new("permission_domain", "lepton_test_domain"),
+        "LeptonManageDelivery".into(),
+        Some("Manage sign-in and delivery".into()),
+        now,
+        now,
+    )?;
+    gauge::generated::Permission::upsert(
+        "lepton_manage_delivery",
+        perm,
+        &system,
+        valence::use_!(r"**Test:** Fixture **Permission** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+
+    for _ in 0..2 {
+        ensure_group_granted_permission(
+            &system,
+            "lepton.delivery.admins",
+            "Lepton delivery admins",
+            "May manage Lepton sign-in and delivery settings",
+            "LeptonManageDelivery",
+            &[SUPER_USER_GROUP_ID],
+        )
+        .await?;
+    }
+
+    let member = "delivery_admin_u9";
+    seed_user(member, "delivery_admin_u9@example.test", &system).await;
+    let user = lepton::generated::User::get(member, &system, valence::use_!(r"**Test:** Fixture **User** load for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?
+        .expect("user");
+    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+        &format!("user:{member}"),
+        gauge::generated::PermissionUserPrincipal::new(
+            user.id().expect("id").clone(),
+            member.to_string(),
+        )?,
+        &system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    let admins = gauge::generated::PermissionGroup::get("lepton.delivery.admins", &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?
+        .expect("admins group");
+    admins
+        .relate_to_member_record(principal.id().expect("pid"), &system, valence::use_!(r"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?;
+
+    let mv = user_valence(&system, member);
+    assert!(
+        service::actor_can(&mv, "LeptonManageDelivery").await?,
+        "admins group member holds the permission"
+    );
+    assert!(
+        !actor_is_super_user(&mv).await?,
+        "being a delivery admin must not make someone a Super User"
+    );
+
+    let stranger = "no_group_u10";
+    seed_user(stranger, "no_group_u10@example.test", &system).await;
+    let sv = user_valence(&system, stranger);
+    assert!(!service::actor_can(&sv, "LeptonManageDelivery").await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn app_admin_group_seed_refuses_session_actor_and_unsynced_permission_sad(
+) -> anyhow::Result<()> {
+    let system = system_valence().await;
+    let user = "seed_u11";
+    seed_user(user, "seed_u11@example.test", &system).await;
+    let uv = user_valence(&system, user);
+    let err = ensure_group_granted_permission(&uv, "g", "g", "g", "Nope", &[])
+        .await
+        .expect_err("session actor");
+    assert!(err.to_string().contains("requires_system_actor"), "{err}");
+
+    let err = ensure_group_granted_permission(&system, "g2", "g2", "g2", "NotSyncedYet", &[])
+        .await
+        .expect_err("permission missing");
+    assert!(err.to_string().contains("permission_missing"), "{err}");
     Ok(())
 }

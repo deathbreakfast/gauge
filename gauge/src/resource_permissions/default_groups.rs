@@ -90,6 +90,74 @@ async fn ensure_group_principal(
         .map_err(|e| map_err("bootstrap", group_id, "upsert_group_principal", e))
 }
 
+/// Idempotently seed a standalone group, grant it one named permission, and make
+/// the listed existing groups members of it.
+///
+/// For host bootstrap of an app-level admin group (for example a product's
+/// "delivery admins"). `member_group_ids` are groups whose members should hold
+/// the permission too; the edge points from the new group *to* each member
+/// group, so those members gain this group's permissions and never the other
+/// way round. Requires a System Valence; this is a control-plane seed, not a
+/// request-path operation.
+///
+/// # Errors
+///
+/// [`ResourcePermissionError::GaugeService`] when `system` is not a System
+/// actor, when the permission has not been synced yet (call after manifest
+/// sync), when a member group does not exist, or on Valence failures.
+pub async fn ensure_group_granted_permission(
+    system: &Valence,
+    group_id: &str,
+    display_name: &str,
+    description: &str,
+    permission_name: &str,
+    member_group_ids: &[&str],
+) -> Result<(), ResourcePermissionError> {
+    if !system.actor().is_system() {
+        return Err(map_err(
+            "bootstrap",
+            group_id,
+            "requires_system_actor",
+            anyhow::anyhow!("group seeds are control-plane operations and need a System Valence"),
+        ));
+    }
+    ensure_standalone_group(system, group_id, display_name, description).await?;
+    grant_named_permission_to_group(system, group_id, permission_name).await?;
+
+    let group = PermissionGroup::get(group_id, system, valence::use_!(r"When a **host seeds an app-level admin group**, we **load the group** so member groups can be attached to it. Used only during host boot."))
+        .await
+        .map_err(|e| map_err("bootstrap", group_id, "get_group", e))?
+        .ok_or_else(|| {
+            map_err(
+                "bootstrap",
+                group_id,
+                "group_missing",
+                anyhow::anyhow!("group {group_id} missing after ensure"),
+            )
+        })?;
+    for member_id in member_group_ids {
+        let principal = ensure_group_principal(system, member_id).await?;
+        let Some(pid) = principal.id().cloned() else {
+            return Err(map_err(
+                "bootstrap",
+                member_id,
+                "principal_id_missing",
+                anyhow::anyhow!("principal id missing"),
+            ));
+        };
+        match group.relate_to_member_record(&pid, system, valence::use_!(r"When a **host seeds an app-level admin group**, we **write the member edge** from that group to a member group, so people in the member group hold the admin group's permissions. Used only during host boot.")).await {
+            Ok(()) => {}
+            Err(e) => {
+                let msg = e.to_string();
+                if !(msg.contains("duplicate") || msg.contains("unique") || msg.contains("already")) {
+                    return Err(map_err("bootstrap", group_id, "relate_member_group", e));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(super) async fn grant_named_permission_to_group(
     system: &Valence,
     group_id: &str,
