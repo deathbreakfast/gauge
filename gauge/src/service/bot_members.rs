@@ -42,6 +42,34 @@ async fn get_bot_principal_raw(
     }
 }
 
+/// Whether the caller may add bots to `group_id` with [`add_group_member_bot`].
+///
+/// True when the caller is a signed-in user who owns the group (directly or
+/// through a group) or is a super user, and the group isn't the Super User
+/// group. Use it to decide whether a UI offers the group as a choice; the add
+/// itself checks again, and also checks that the caller can see the bot.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`] (via `anyhow`): `NotFound` when the group doesn't
+/// exist. Valence failures otherwise. A caller that isn't a signed-in user gets
+/// `Ok(false)`.
+pub async fn can_add_group_member_bot(group_id: &str, v: &Valence) -> anyhow::Result<bool> {
+    let Ok(actor_user_id) = require_user_id(v) else {
+        return Ok(false);
+    };
+    if group_id == SUPER_USER_GROUP_ID {
+        return Ok(false);
+    }
+    let group = get_group_raw(group_id, v)
+        .await?
+        .ok_or_else(|| GaugeServiceError::not_found("permission_group", group_id))?;
+    Ok(
+        group_has_owner_user(&group, &user_id_candidates(&actor_user_id), v).await?
+            || actor_is_super_user(v).await?,
+    )
+}
+
 /// Add `bot` as a member of `group_id`, so it holds everything the group holds.
 ///
 /// The caller must own the group (or be a super user) **and** be able to see the

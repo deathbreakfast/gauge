@@ -112,7 +112,7 @@ pub async fn permission_allows_user(
                     }
                 }
             }
-                        None => {}
+            None => {}
         }
     }
 

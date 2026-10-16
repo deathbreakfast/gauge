@@ -13,7 +13,7 @@ use gauge::actor_can_raw::actor_can_raw;
 use gauge::bots::BOT_CREATORS_GROUP_ID;
 use gauge::service::{
     actor_can, add_group_member_bot, add_group_member_group, add_group_member_user,
-    get_group_detail, remove_group_member_bot, GaugeServiceError,
+    can_add_group_member_bot, get_group_detail, remove_group_member_bot, GaugeServiceError,
 };
 use gauge::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID};
 use lepton::generated::BotStatus;
@@ -378,4 +378,64 @@ async fn tm_remove_bot_member_happy() {
     remove_group_member_bot(READERS, &bot, &carol)
         .await
         .expect("idempotent remove");
+}
+
+#[tokio::test]
+async fn tm_can_add_bot_group_owner_and_super_user_happy() {
+    let w = world().await;
+    common::seed_group_with_owner(&w.system, "alice_team", "alice").await;
+
+    assert!(can_add_group_member_bot("alice_team", &w.as_user("alice"))
+        .await
+        .expect("owner check"));
+    assert!(can_add_group_member_bot(READERS, &w.as_user("carol"))
+        .await
+        .expect("super user check"));
+    // The answer matches what the add does.
+    let bot = create_bot(&w, "alice", "checked-bot").await;
+    add_group_member_bot("alice_team", &bot, &w.as_user("alice"))
+        .await
+        .expect("owner adds after a true check");
+}
+
+#[tokio::test]
+async fn tm_can_add_bot_non_owner_and_super_user_group_sad() {
+    let w = world().await;
+    let bot = create_bot(&w, "alice", "hopeful-bot").await;
+
+    assert!(!can_add_group_member_bot(READERS, &w.as_user("alice"))
+        .await
+        .expect("non-owner check"));
+    assert!(add_group_member_bot(READERS, &bot, &w.as_user("alice"))
+        .await
+        .is_err());
+    // Not even a super user may put a bot in the Super User group.
+    assert!(
+        !can_add_group_member_bot(SUPER_USER_GROUP_ID, &w.as_user("carol"))
+            .await
+            .expect("super user group check")
+    );
+}
+
+#[tokio::test]
+async fn tm_can_add_bot_refused_for_bot_and_anonymous_sad() {
+    let w = world().await;
+    let bot = create_bot(&w, "alice", "curious-bot").await;
+    for v in [w.as_bot(&bot), w.as_actor(Actor::Anonymous)] {
+        assert!(!can_add_group_member_bot(READERS, &v)
+            .await
+            .expect("non-user callers get false"));
+    }
+}
+
+#[tokio::test]
+async fn tm_can_add_bot_missing_group_sad() {
+    let w = world().await;
+    let err = can_add_group_member_bot("no_such_group", &w.as_user("carol"))
+        .await
+        .expect_err("missing group");
+    assert!(
+        matches!(service_error(&err), GaugeServiceError::NotFound { .. }),
+        "{err:#}"
+    );
 }

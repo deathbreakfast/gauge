@@ -36,7 +36,7 @@ pub use crate::actor_can_raw::{actor_can_raw, user_can_raw};
 pub use access::{
     actor_can, can_edit_domain, can_edit_group, can_edit_permission, has_permission, user_can,
 };
-pub use bot_members::{add_group_member_bot, remove_group_member_bot};
+pub use bot_members::{add_group_member_bot, can_add_group_member_bot, remove_group_member_bot};
 pub use domains::{
     add_domain_owner_user, create_domain, delete_domain, get_domain_detail, list_domains,
     remove_domain_owner_user, update_domain,
