@@ -7,7 +7,8 @@
 //!
 //! - Permission/group CRUD with ownership/super-user authorization; domain
 //!   taxonomy CRUD with domain owners or Super User.
-//! - Principal graph management (users/groups, nested membership, owners).
+//! - Principal graph management (users/groups, nested membership, owners), plus
+//!   bot accounts as group members.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
 //! - Permission request workflow (create/list/review/decide).
 //! - History/audit projection for changed fields and actions.
@@ -22,6 +23,7 @@
 //! [`crate::instrumentation`] (allow / deny / error).
 
 mod access;
+mod bot_members;
 mod domains;
 mod error;
 mod groups;
@@ -34,6 +36,7 @@ pub use crate::actor_can_raw::{actor_can_raw, user_can_raw};
 pub use access::{
     actor_can, can_edit_domain, can_edit_group, can_edit_permission, has_permission, user_can,
 };
+pub use bot_members::{add_group_member_bot, remove_group_member_bot};
 pub use domains::{
     add_domain_owner_user, create_domain, delete_domain, get_domain_detail, list_domains,
     remove_domain_owner_user, update_domain,

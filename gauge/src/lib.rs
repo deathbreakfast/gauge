@@ -43,6 +43,14 @@
 //! - **Super User group** — Chronon/script helpers that ensure the well-known
 //!   Super User group exists at boot so privilege is pinned to a fixed group id.
 //!   [Get started](#super-user-bootstrap)
+//! - **Bot group members** — A Lepton bot account gets permissions only by
+//!   joining groups, so the group that grants people access to an API can grant
+//!   an agent the same access. Bots never own anything and can't write in Gauge.
+//!   [Give a bot permissions through a group](#give-a-bot-permissions-through-a-group)
+//! - **Lepton bot gate** — Decides who may create bots and who may manage
+//!   everyone's bots, from the `lepton.bot.create` and `lepton.bot.manage_any`
+//!   permissions and a seeded "Bot creators" group.
+//!   [Back Lepton bot creation with Gauge](#back-lepton-bot-creation-with-gauge)
 //! - **Privilege-shaped mutations** — Domain ops that change who can act
 //!   (grants, membership, ownership, nested groups, permission delete/update,
 //!   request decide). Product servers gate these with TOTP step-up; taxonomy
@@ -62,6 +70,8 @@
 //! Valence actor's user id, then evaluates direct grants and grants inherited
 //! through nested group membership. Call it on each protected request (or inside
 //! a server function) when you need a boolean allow/deny for a permission name.
+//! A Lepton bot actor is checked through the groups it belongs to instead (see
+//! [Give a bot permissions through a group](#give-a-bot-permissions-through-a-group)).
 //!
 //! **Prerequisites:** `ssr` feature; a `Valence` handle whose actor is the
 //! caller (or use [`service::user_can`] with an explicit user id for admin
@@ -512,6 +522,101 @@
 //! See root `SECURITY.md` for id vs display-name pinning. Next:
 //! [Runtime access checks](#runtime-access-checks).
 //!
+//! ## Give a bot permissions through a group
+//!
+//! A Lepton bot account acts as its own Valence actor, so an agent calling an
+//! API with a bot token is checked as the bot, never as the person who owns it.
+//! Gauge gives that actor permissions only through group membership: put the
+//! bot in a group, and [`service::actor_can`] and [`actor_can_raw::actor_can_raw`]
+//! allow it whatever the group holds, directly or through nested groups, for as
+//! long as the bot is active. Operators do this once per bot, usually right after
+//! creating it, from a session as a group owner or super user.
+//!
+//! **Prerequisites:** `ssr`; a bot created through `lepton_auth::bots::create_bot`
+//! (its `lepton_identity::bots::BotId`); an existing group that holds the
+//! permissions the bot needs; a session Valence for a user who owns that group,
+//! or a super user. A group owner must also be able to see the bot: its owner,
+//! or someone who manages every bot.
+//!
+//! 1. Call [`service::add_group_member_bot`] with the group id and the bot id.
+//! 2. Check as the bot: build its Valence from `bot_id.actor()` and call
+//!    `actor_can`.
+//! 3. Call [`service::remove_group_member_bot`] to take the access away.
+//!
+//! ```ignore
+//! use gauge::service::{actor_can, add_group_member_bot, remove_group_member_bot};
+//!
+//! // `carol` is a super user's session Valence; `bot_id` came from create_bot.
+//! add_group_member_bot("spectra_readers", &bot_id, &carol).await?;
+//!
+//! // The bearer layer builds the bot's Valence on the server from its token row.
+//! let bot = factory.build(&serde_json::to_value(bot_id.actor())?)?;
+//! assert!(actor_can(&bot, "spectra.query.gauge_permission_check_log").await?);
+//!
+//! remove_group_member_bot("spectra_readers", &bot_id, &carol).await?;
+//! assert!(!actor_can(&bot, "spectra.query.gauge_permission_check_log").await?);
+//! ```
+//!
+//! A suspended bot, or one being deleted, holds nothing even while it is still a
+//! member, and deleting a bot removes its membership. Adding fails with
+//! [`service::GaugeServiceError`]: `NotAuthorized` when the caller doesn't own the
+//! group, `NotFound` when they can't see the bot, and `Validation` for the Super
+//! User group, which bots never join. Bots get no direct grants, own no group,
+//! domain, or permission, and every Gauge write refuses a bot or any other
+//! service-user caller. Other service users still hold nothing. Next:
+//! [Back Lepton bot creation with Gauge](#back-lepton-bot-creation-with-gauge)
+//! for who may create bots in the first place.
+//!
+//! ## Back Lepton bot creation with Gauge
+//!
+//! Lepton asks an installed bot gate whether a user may create bots and whether
+//! they may manage everyone's bots. [`bots::GaugeBotGate`] answers from Gauge: the
+//! first question is the `lepton.bot.create` permission, the second is
+//! `lepton.bot.manage_any`. Install it once per process at host boot, after
+//! table sync and the host's manifest sync and before the server takes requests.
+//! [`bots::seed_bot_permissions`] creates both permissions and a "Bot creators"
+//! group holding `lepton.bot.create`, so operators grant bot creation by adding
+//! people to that group. Super users pass both checks.
+//!
+//! **Prerequisites:** `ssr`; the boot Valence (`Actor::System`) with Gauge and
+//! Lepton schemas synced.
+//!
+//! 1. Call [`bots::seed_bot_permissions`] on the boot Valence.
+//! 2. Call [`bots::install_gauge_bot_gate`].
+//! 3. Add people who may create bots to [`bots::BOT_CREATORS_GROUP_ID`].
+//!
+//! ```ignore
+//! use gauge::bots::{install_gauge_bot_gate, seed_bot_permissions, BOT_CREATORS_GROUP_ID};
+//! use gauge::service::add_group_member_user;
+//! use lepton_auth::bots::{create_bot, BotError, NewBot};
+//!
+//! // At boot, on the System Valence.
+//! let stats = seed_bot_permissions(&system).await?;
+//! assert!(stats.permissions_created <= 2); // 0 on every boot after the first
+//! if install_gauge_bot_gate().is_err() {
+//!     // Another gate is already installed in this process; the first one stays.
+//! }
+//!
+//! // Later, a super user lets alice create bots.
+//! add_group_member_user(BOT_CREATORS_GROUP_ID, "alice", &carol).await?;
+//! let new_bot = NewBot { handle: "spectra-bot", display_name: "Spectra agent", description: None };
+//! let bot = create_bot(&alice, new_bot).await?;
+//! assert_eq!(bot.handle(), "spectra-bot");
+//!
+//! // bob isn't in the group.
+//! let refused = create_bot(&bob, NewBot { handle: "bob-bot", ..new_bot }).await;
+//! assert!(matches!(refused, Err(BotError::CreateNotPermitted)));
+//! ```
+//!
+//! `seed_bot_permissions` refuses any caller but System with
+//! [`service::GaugeServiceError::NotAuthorized`]; on later boots it changes
+//! nothing. `install_gauge_bot_gate` returns
+//! `lepton_identity::bots::BotGateAlreadyInstalled` when a gate is already
+//! installed, and the first one stays. When a Gauge lookup fails, the gate
+//! reports a `gauge_lookup` error, which Lepton treats as a refusal. A bot never
+//! passes the gate, even as a member of "Bot creators". Next:
+//! [Give a bot permissions through a group](#give-a-bot-permissions-through-a-group).
+//!
 //! ## Privilege-shaped mutations
 //!
 //! Privilege-shaped mutations are the domain service calls that change who can
@@ -634,6 +739,10 @@ pub mod instrumentation;
 
 #[cfg(feature = "ssr")]
 pub mod actor_can_raw;
+#[cfg(feature = "ssr")]
+mod actor_guard;
+#[cfg(feature = "ssr")]
+pub mod bots;
 #[cfg(feature = "ssr")]
 pub mod gluon_operator_groups;
 #[cfg(feature = "ssr")]

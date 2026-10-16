@@ -34,6 +34,7 @@ valence = { workspace = true, optional = true }
 record-history = { workspace = true, optional = true }
 uf-search-core = { workspace = true, default-features = false }
 lepton = { workspace = true, optional = true }
+lepton-identity = { workspace = true, optional = true }
 quark = { workspace = true, optional = true }
 chronon-coordinator = { workspace = true, optional = true }
 chronon-coordinator-macros = { workspace = true, optional = true }
@@ -74,6 +75,7 @@ ssr = [
     "uf-notifications-core/ssr",
     "dep:lepton",
     "lepton/ssr",
+    "dep:lepton-identity",
     "uf-search-core/ssr"]
 spectra-topics = [
     "dep:spectra",
@@ -163,4 +165,16 @@ required-features = ["ssr"]
 
 [[test]]
 name = "trait_registry_smoke"
+required-features = ["ssr"]
+
+[[test]]
+name = "bot_principals_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "bot_gate_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "service_user_write_sweep"
 required-features = ["ssr"]

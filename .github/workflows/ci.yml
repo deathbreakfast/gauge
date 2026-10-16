@@ -64,6 +64,9 @@ jobs:
             --test principal_connection_migration_integration \
             --test super_user_scripts_integration \
             --test search_source_dispatch_integration \
+            --test bot_principals_integration \
+            --test bot_gate_integration \
+            --test service_user_write_sweep \
             -- -D warnings
       - name: cargo clippy (embedded-gauge-host)
         run: cargo clippy -p embedded-gauge-host --all-targets -- -D warnings
@@ -96,6 +99,9 @@ jobs:
           --test principal_connection_migration_integration
           --test super_user_scripts_integration
           --test search_source_dispatch_integration
+          --test bot_principals_integration
+          --test bot_gate_integration
+          --test service_user_write_sweep
       - name: cargo check + run (embedded-gauge-host)
         run: |
           cargo check -p embedded-gauge-host

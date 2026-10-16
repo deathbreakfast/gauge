@@ -47,7 +47,9 @@ fn note_raw_read() {
 /// raw backend reads and M2M edge walks (no typed ORM privacy re-entry, no
 /// System elevate).
 ///
-/// System actors always allow. Missing / anonymous actors deny.
+/// System actors always allow. Missing / anonymous actors deny. A Lepton bot
+/// actor is allowed only through groups it is a member of, while active (see
+/// [`crate::bots`]); other service users deny.
 ///
 /// # Errors
 ///
@@ -56,6 +58,11 @@ pub async fn actor_can_raw(v: &Valence, permission_name: &str) -> anyhow::Result
     let actor = v.actor();
     if actor.is_system() {
         return Ok(true);
+    }
+    if let Some(bot) = lepton_identity::bots::BotId::from_actor(actor) {
+        let decision = crate::bots::access::bot_decision(v, &bot, permission_name).await;
+        crate::bots::access::log_decision(permission_name, &decision);
+        return decision.map(crate::bots::access::BotDecision::allowed);
     }
     let Some(user_id) = actor.user_id() else {
         return Ok(false);
@@ -105,12 +112,12 @@ fn user_id_candidates(user_id: &str) -> Vec<String> {
     out
 }
 
-fn model_pk_id(opt: Option<&valence::RecordId>) -> String {
+pub(crate) fn model_pk_id(opt: Option<&valence::RecordId>) -> String {
     opt.and_then(|r| valence::extract_id_from_record(r).ok())
         .unwrap_or_default()
 }
 
-async fn raw_get_json(
+pub(crate) async fn raw_get_json(
     table: &str,
     id: &str,
     v: &Valence,
@@ -124,7 +131,10 @@ async fn raw_get_json(
         .map_err(|e| anyhow::anyhow!("read {table}: {e}"))
 }
 
-async fn permissions_named_raw(name: &str, v: &Valence) -> anyhow::Result<Vec<Permission>> {
+pub(crate) async fn permissions_named_raw(
+    name: &str,
+    v: &Valence,
+) -> anyhow::Result<Vec<Permission>> {
     note_raw_read();
     let backend = v
         .backend_for_table("permission")

@@ -112,7 +112,7 @@ pub async fn permission_allows_user(
                     }
                 }
             }
-            None => {}
+                        None => {}
         }
     }
 
@@ -142,9 +142,26 @@ pub fn request_target_record(
 /// Returns `true` when the current actor has the named permission.
 ///
 /// This checks direct user grants and grants inherited through allowed groups
-/// (including nested group membership).
+/// (including nested group membership). A Lepton bot actor holds a permission
+/// only through groups it is a member of, and only while the bot is active (see
+/// [`crate::bots`]). Other service users, and anonymous callers, hold nothing.
 pub async fn actor_can(v: &Valence, permission_name: &str) -> anyhow::Result<bool> {
     let permission_name = permission_name.trim();
+    if let Some(bot) = lepton_identity::bots::BotId::from_actor(v.actor()) {
+        let decision = crate::bots::access::bot_decision(v, &bot, permission_name).await;
+        crate::bots::access::log_decision(permission_name, &decision);
+        let outcome = match &decision {
+            Ok(d) if d.allowed() => PermissionCheckOutcome::Allow,
+            Ok(_) => PermissionCheckOutcome::Deny,
+            Err(_) => PermissionCheckOutcome::Error,
+        };
+        crate::instrumentation::record_permission_check(&PermissionCheckRecord::from_valence(
+            v,
+            permission_name,
+            outcome,
+        ));
+        return decision.map(crate::bots::access::BotDecision::allowed);
+    }
     let Some(actor_user_id) = current_user_id(v) else {
         crate::instrumentation::record_permission_check(&PermissionCheckRecord::from_valence(
             v,
