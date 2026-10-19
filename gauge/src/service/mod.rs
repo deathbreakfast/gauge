@@ -8,7 +8,7 @@
 //! - Permission/group CRUD with ownership/super-user authorization; domain
 //!   taxonomy CRUD with domain owners or Super User.
 //! - Principal graph management (users/groups, nested membership, owners), plus
-//!   bot accounts as group members.
+//!   service users as group members.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
 //! - Permission request workflow (create/list/review/decide).
 //! - History/audit projection for changed fields and actions.
@@ -23,20 +23,19 @@
 //! [`crate::instrumentation`] (allow / deny / error).
 
 mod access;
-mod bot_members;
 mod domains;
 mod error;
 mod groups;
 mod helpers;
 mod permissions;
 mod requests;
+mod service_user_members;
 
 /// Privacy-safe [`actor_can`] for `PolicyEvaluator`s — see [`crate::actor_can_raw`].
 pub use crate::actor_can_raw::{actor_can_raw, user_can_raw};
 pub use access::{
     actor_can, can_edit_domain, can_edit_group, can_edit_permission, has_permission, user_can,
 };
-pub use bot_members::{add_group_member_bot, can_add_group_member_bot, remove_group_member_bot};
 pub use domains::{
     add_domain_owner_user, create_domain, delete_domain, get_domain_detail, list_domains,
     remove_domain_owner_user, update_domain,
@@ -56,4 +55,8 @@ pub use requests::{
     actor_can_view_history_subject, create_permission_request, decide_permission_request,
     get_permission_request_detail, list_history, list_permission_requests_for_actor,
     list_permission_requests_for_review, MAX_HISTORY_LIST_ROWS, MAX_REQUEST_REASON_CHARS,
+};
+pub use service_user_members::{
+    add_group_member_service_user, can_add_group_member_service_user,
+    remove_group_member_service_user,
 };

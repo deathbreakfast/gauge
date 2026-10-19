@@ -198,7 +198,7 @@ async fn ensure_permission(
 /// Returns `anyhow::Error` when Valence create or lookup fails while ensuring
 /// the owners group, a domain, or a permission row, and a
 /// [`crate::service::GaugeServiceError::NotAuthorized`] when `v` belongs to a
-/// service user (such as a bot) or an anonymous caller.
+/// service user (such as a service user) or an anonymous caller.
 pub async fn sync_permission_manifests(
     v: &Valence,
     manifests: &[PermissionManifestInput],

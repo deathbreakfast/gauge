@@ -12,12 +12,12 @@
 //! source-of-truth field definitions.
 
 #[cfg(feature = "ssr")]
-use crate::bots::BOT_PRINCIPAL_BOT_MANAGER;
-#[cfg(feature = "ssr")]
 use crate::privacy_policies::{
     DOMAIN_OWNER_RECURSIVE, GROUP_OWNER_RECURSIVE, PERMISSION_OWNER_RECURSIVE,
     REQUEST_TARGET_MAINTAINER, SUPER_USER_GROUP_MEMBER,
 };
+#[cfg(feature = "ssr")]
+use crate::service_users::SERVICE_USER_PRINCIPAL_MANAGER;
 #[cfg(feature = "ssr")]
 use crate::side_effects::history_logger::PermissionHistoryWriter;
 #[cfg(feature = "ssr")]

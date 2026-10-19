@@ -1,16 +1,14 @@
-//! No Gauge write succeeds for a bot, an infrastructure service user, or an
+//! No Gauge write succeeds for a service user, an infrastructure service user, or an
 //! anonymous caller (B3 K11).
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-#[path = "common/bots.rs"]
-mod bots_fixtures;
+#[path = "common/service_users.rs"]
+mod service_users_fixtures;
 // `common::test_valence` is async for the suites that await it; these don't.
 #[allow(clippy::unused_async)]
 mod common;
 
-use bots_fixtures::{create_bot, raw_count, world, World, READ, READERS};
-use gauge::bots::seed_bot_permissions;
 use gauge::generated::{Permission, PermissionGroup};
 use gauge::gluon_operator_groups::ensure_gluon_default_operator_groups;
 use gauge::manifest_sync::{
@@ -21,12 +19,14 @@ use gauge::resource_permissions::{
     seed_resource_kind_catalog, ActorId, ResourceKind, ResourcePermissionSpec,
 };
 use gauge::service as svc;
+use gauge::service_users::seed_service_user_permissions;
 use gauge::super_user::{ensure_super_user_group, SUPER_USER_GROUP_ID};
 use gauge::types::{
     PermissionCreateInput, PermissionDomainCreateInput, PermissionGroupCreateInput,
     PermissionRequestCreateInput, PermissionRequestDecision, PermissionRequestDecisionInput,
     PermissionRequestTargetKind,
 };
+use service_users_fixtures::{create_service_user, raw_count, world, World, READ, READERS};
 use valence::{Actor, Model, StringPredicate, Valence};
 
 const TABLES: [&str; 8] = [
@@ -35,7 +35,7 @@ const TABLES: [&str; 8] = [
     "permission_domain",
     "permission_user_principal",
     "permission_group_principal",
-    "permission_bot_principal",
+    "permission_service_user_principal",
     "permission_request",
     "permission_history",
 ];
@@ -59,7 +59,7 @@ async fn fingerprint(w: &World, read_id: &str) -> Vec<String> {
         .collect();
     holders.sort();
     out.push(format!("holders={holders:?}"));
-    for group_id in [READERS, SUPER_USER_GROUP_ID, "bot_creators"] {
+    for group_id in [READERS, SUPER_USER_GROUP_ID, "service_user_creators"] {
         let group = PermissionGroup::get(group_id, &w.system, valence::use_!(r"**Test:** Fixture **permission group** load in the gauge write sweep to compare its members before and after. CI and developers running the suite only."))
             .await
             .unwrap()
@@ -104,16 +104,19 @@ async fn every_write(
     v: &Valence,
     read_id: &str,
     bundle_resource: &str,
-    bot: &lepton_identity::bots::BotId,
+    service_user: &lepton_identity::service_users::ServiceUserId,
 ) -> Vec<&'static str> {
-    let mut ok = service_writes(v, bot).await;
+    let mut ok = service_writes(v, service_user).await;
     ok.extend(permission_writes(v, read_id).await);
     ok.extend(boot_helper_writes(v, bundle_resource).await);
     ok
 }
 
 /// Group membership and ownership writes; returns the names of calls that succeeded.
-async fn service_writes(v: &Valence, bot: &lepton_identity::bots::BotId) -> Vec<&'static str> {
+async fn service_writes(
+    v: &Valence,
+    service_user: &lepton_identity::service_users::ServiceUserId,
+) -> Vec<&'static str> {
     let mut ok = Vec::new();
     macro_rules! attempt {
         ($name:literal, $call:expr) => {
@@ -155,23 +158,23 @@ async fn service_writes(v: &Valence, bot: &lepton_identity::bots::BotId) -> Vec<
     );
     attempt!(
         "remove_group_member_user",
-        svc::remove_group_member_user("bot_creators", "alice", v)
+        svc::remove_group_member_user("service_user_creators", "alice", v)
     );
     attempt!(
         "add_group_member_group",
-        svc::add_group_member_group(READERS, "bot_creators", v)
+        svc::add_group_member_group(READERS, "service_user_creators", v)
     );
     attempt!(
         "remove_group_member_group",
-        svc::remove_group_member_group(READERS, "bot_creators", v)
+        svc::remove_group_member_group(READERS, "service_user_creators", v)
     );
     attempt!(
-        "add_group_member_bot",
-        svc::add_group_member_bot(READERS, bot, v)
+        "add_group_member_service_user",
+        svc::add_group_member_service_user(READERS, service_user, v)
     );
     attempt!(
-        "remove_group_member_bot",
-        svc::remove_group_member_bot(READERS, bot, v)
+        "remove_group_member_service_user",
+        svc::remove_group_member_service_user(READERS, service_user, v)
     );
     ok
 }
@@ -230,7 +233,7 @@ async fn permission_writes(v: &Valence, read_id: &str) -> Vec<&'static str> {
     );
     attempt!(
         "grant_permission_to_group",
-        svc::grant_permission_to_group(read_id, "bot_creators", v)
+        svc::grant_permission_to_group(read_id, "service_user_creators", v)
     );
     attempt!(
         "create_permission_request",
@@ -302,14 +305,17 @@ async fn boot_helper_writes(v: &Valence, bundle_resource: &str) -> Vec<&'static 
         ensure_gluon_default_operator_groups(v)
     );
     attempt!("ensure_super_user_group", ensure_super_user_group(v));
-    attempt!("seed_bot_permissions", seed_bot_permissions(v));
+    attempt!(
+        "seed_service_user_permissions",
+        seed_service_user_permissions(v)
+    );
     ok
 }
 
 #[tokio::test]
-async fn tm_bot_write_sweep_sad() {
+async fn tm_service_user_write_sweep_sad() {
     let w = world().await;
-    let bot = create_bot(&w, "alice", "sweeping-bot").await;
+    let service_user = create_service_user(&w, "alice", "sweeping").await;
     let read_id = Permission::query(&w.system, valence::use_!(r"**Test:** Fixture **permission** lookup in the gauge write sweep to find the readers permission id. CI and developers running the suite only."))
         .where_name(StringPredicate::Equals(READ.into()))
         .first()
@@ -334,7 +340,7 @@ async fn tm_bot_write_sweep_sad() {
     .expect("seed bundle");
 
     let callers = [
-        ("bot", w.as_bot(&bot)),
+        ("service_user", w.as_service_user(&service_user)),
         (
             "infra service user",
             w.as_actor(Actor::ServiceUser {
@@ -345,7 +351,7 @@ async fn tm_bot_write_sweep_sad() {
     ];
     for (label, v) in callers {
         let before = fingerprint(&w, &read_id).await;
-        let succeeded = every_write(&v, &read_id, "kept-app", &bot).await;
+        let succeeded = every_write(&v, &read_id, "kept-app", &service_user).await;
         let after = fingerprint(&w, &read_id).await;
         assert!(
             succeeded.is_empty(),

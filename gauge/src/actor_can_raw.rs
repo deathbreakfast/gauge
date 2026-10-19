@@ -47,9 +47,9 @@ fn note_raw_read() {
 /// raw backend reads and M2M edge walks (no typed ORM privacy re-entry, no
 /// System elevate).
 ///
-/// System actors always allow. Missing / anonymous actors deny. A Lepton bot
-/// actor is allowed only through groups it is a member of, while active (see
-/// [`crate::bots`]); other service users deny.
+/// System actors always allow. Missing / anonymous actors deny. A registered service
+/// user is allowed only through groups it is a member of, while active (see
+/// [`crate::service_users`]); built-in service users deny.
 ///
 /// # Errors
 ///
@@ -59,10 +59,12 @@ pub async fn actor_can_raw(v: &Valence, permission_name: &str) -> anyhow::Result
     if actor.is_system() {
         return Ok(true);
     }
-    if let Some(bot) = lepton_identity::bots::BotId::from_actor(actor) {
-        let decision = crate::bots::access::bot_decision(v, &bot, permission_name).await;
-        crate::bots::access::log_decision(permission_name, &decision);
-        return decision.map(crate::bots::access::BotDecision::allowed);
+    if let Some(service_user) = lepton_identity::service_users::ServiceUserId::from_actor(actor) {
+        let decision =
+            crate::service_users::access::service_user_decision(v, &service_user, permission_name)
+                .await;
+        crate::service_users::access::log_decision(permission_name, &decision);
+        return decision.map(crate::service_users::access::ServiceUserDecision::allowed);
     }
     let Some(user_id) = actor.user_id() else {
         return Ok(false);

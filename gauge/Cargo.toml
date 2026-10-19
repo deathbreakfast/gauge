@@ -168,11 +168,11 @@ name = "trait_registry_smoke"
 required-features = ["ssr"]
 
 [[test]]
-name = "bot_principals_integration"
+name = "service_user_principals_integration"
 required-features = ["ssr"]
 
 [[test]]
-name = "bot_gate_integration"
+name = "service_user_gate_integration"
 required-features = ["ssr"]
 
 [[test]]

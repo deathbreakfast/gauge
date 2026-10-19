@@ -662,7 +662,7 @@ async fn delete_permission_group_row(
 ///
 /// Returns [`ResourcePermissionError::InvalidResourceId`] when `resource_id`
 /// normalizes empty, or [`ResourcePermissionError::GaugeService`] when the caller
-/// is a service user (such as a bot) or anonymous, or when a Valence Restrict
+/// is a service user (such as a service user) or anonymous, or when a Valence Restrict
 /// violation or backend failure blocks a step.
 pub async fn delete_resource_permission_bundle(
     v: &Valence,

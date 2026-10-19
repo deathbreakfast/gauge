@@ -1,6 +1,6 @@
-//! Bot fixtures for gauge integration tests: the real Gauge bot gate, the boot
-//! seed, a bot owner in "Bot creators", and bots created through Lepton's own
-//! privacy rules.
+//! Service user fixtures for gauge integration tests: the real Gauge service user gate, the
+//! boot seed, a service user owner in "Service user creators", and service users created
+//! through Lepton's own privacy rules.
 
 #![allow(dead_code)]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
@@ -8,13 +8,17 @@
 use std::sync::Once;
 
 use chrono::Utc;
-use gauge::bots::{install_gauge_bot_gate, seed_bot_permissions, BOT_CREATORS_GROUP_ID};
 use gauge::manifest_sync::{
     sync_permission_manifests, PermissionDomainInput, PermissionInput, PermissionManifestInput,
 };
 use gauge::resource_permissions::ensure_group_granted_permission;
-use lepton::generated::{Bot, BotOwnerKind, BotStatus};
-use lepton_identity::bots::BotId;
+use gauge::service_users::{
+    install_gauge_service_user_gate, seed_service_user_permissions, SERVICE_USER_CREATORS_GROUP_ID,
+};
+use lepton::generated::{
+    ServiceUserAccount, ServiceUserAccountOwnerKind, ServiceUserAccountStatus,
+};
+use lepton_identity::service_users::ServiceUserId;
 use valence::{Actor, Model, RecordId, Valence};
 
 use crate::common::{mem_router, seed_super_user_group_with_member, seed_user, valence_for};
@@ -39,8 +43,8 @@ impl World {
         )
     }
 
-    pub fn as_bot(&self, bot: &BotId) -> Valence {
-        valence_for(self.router.clone(), bot.actor())
+    pub fn as_service_user(&self, service_user: &ServiceUserId) -> Valence {
+        valence_for(self.router.clone(), service_user.actor())
     }
 
     pub fn as_actor(&self, actor: Actor) -> Valence {
@@ -52,12 +56,12 @@ impl World {
 pub fn install_gate() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        install_gauge_bot_gate().expect("first gate install in this binary");
+        install_gauge_service_user_gate().expect("first gate install in this binary");
     });
 }
 
-/// **Test:** seeded world: boot seed, a super user `carol`, a bot owner `alice`
-/// in "Bot creators", and the [`READERS`] group holding [`READ`].
+/// **Test:** seeded world: boot seed, a super user `carol`, a service user owner `alice`
+/// in "Service user creators", and the [`READERS`] group holding [`READ`].
 pub async fn world() -> World {
     install_gate();
     let router = mem_router();
@@ -67,18 +71,22 @@ pub async fn world() -> World {
             operation: "test_seed".into(),
         },
     );
-    let _stats = seed_bot_permissions(&system)
+    let _stats = seed_service_user_permissions(&system)
         .await
-        .expect("seed bot permissions");
+        .expect("seed service user permissions");
     seed_user("carol", "carol@example.test", &system).await;
     seed_super_user_group_with_member(&system, "carol").await;
     for id in ["alice", "bob", "dave"] {
         seed_user(id, &format!("{id}@example.test"), &system).await;
     }
     let world = World { system, router };
-    gauge::service::add_group_member_user(BOT_CREATORS_GROUP_ID, "alice", &world.as_user("carol"))
-        .await
-        .expect("alice joins Bot creators");
+    gauge::service::add_group_member_user(
+        SERVICE_USER_CREATORS_GROUP_ID,
+        "alice",
+        &world.as_user("carol"),
+    )
+    .await
+    .expect("alice joins Service user creators");
     sync_permission_manifests(
         &world.system,
         &[PermissionManifestInput {
@@ -109,41 +117,46 @@ pub async fn world() -> World {
     world
 }
 
-/// **Test:** create a bot owned by `owner` through Lepton's privacy rules (the
+/// **Test:** create a service user owned by `owner` through Lepton's privacy rules (the
 /// owner must be allowed by the installed Gauge gate).
-pub async fn create_bot(world: &World, owner: &str, handle: &str) -> BotId {
+pub async fn create_service_user(world: &World, owner: &str, handle: &str) -> ServiceUserId {
     let v = world.as_user(owner);
-    let id = BotId::new_v4();
+    let id = ServiceUserId::new_v4();
     let owner_ref = RecordId::new("user", owner);
     let now = Utc::now();
-    let row = Bot::new(
+    let row = ServiceUserAccount::new(
         Some(owner_ref.clone()),
-        BotOwnerKind::User,
+        ServiceUserAccountOwnerKind::User,
         Some(owner_ref),
         handle.to_string(),
         handle.replace('-', ""),
-        "Fixture bot".to_string(),
+        "Fixture service user".to_string(),
         None,
-        BotStatus::Active,
+        ServiceUserAccountStatus::Active,
         None,
         now,
         now,
     )
-    .expect("bot row");
-    Bot::upsert(id.as_str(), row, &v, valence::use_!(r"**Test:** Fixture **bot account** save for gauge bot tests so the suite can grant and check bot permissions. CI and developers running the suite only."))
+    .expect("service user row");
+    ServiceUserAccount::upsert(id.as_str(), row, &v, valence::use_!(r"**Test:** Fixture **service user** save for gauge service user tests so the suite can grant and check service user permissions. CI and developers running the suite only."))
         .await
-        .expect("owner creates bot");
+        .expect("owner creates service user");
     id
 }
 
-/// **Test:** set a bot's status as its owner.
-pub async fn set_bot_status(world: &World, owner: &str, bot: &BotId, status: BotStatus) {
+/// **Test:** set a service user's status as its owner.
+pub async fn set_service_user_status(
+    world: &World,
+    owner: &str,
+    service_user: &ServiceUserId,
+    status: ServiceUserAccountStatus,
+) {
     let v = world.as_user(owner);
-    let row = Bot::get(bot.as_str(), &v, valence::use_!(r"**Test:** Fixture **bot account** load for gauge bot tests before changing its status. CI and developers running the suite only."))
+    let row = ServiceUserAccount::get(service_user.as_str(), &v, valence::use_!(r"**Test:** Fixture **service user** load for gauge service user tests before changing its status. CI and developers running the suite only."))
         .await
-        .expect("load bot")
-        .expect("bot exists");
-    row.get_mutable(&v, valence::use_!(r"**Test:** Fixture **bot account** status change for gauge bot tests. CI and developers running the suite only."))
+        .expect("load service user")
+        .expect("service user exists");
+    row.get_mutable(&v, valence::use_!(r"**Test:** Fixture **service user** status change for gauge service user tests. CI and developers running the suite only."))
         .set_status(status)
         .expect("status")
         .commit()
