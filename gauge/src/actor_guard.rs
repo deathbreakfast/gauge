@@ -3,7 +3,7 @@
 //! A few Gauge helpers (manifest sync, resource bundles, operator group seeds)
 //! run their writes as System because they create control-plane rows that no
 //! single user owns. They must still refuse a caller that is a service user,
-//! such as a bot, or an anonymous request: otherwise a bot could grant itself
+//! such as a service user, or an anonymous request: otherwise a service user could grant itself
 //! permissions by calling them. The `service` layer gets the same result from
 //! `require_user_id`.
 
@@ -11,7 +11,7 @@ use valence::{Actor, Valence};
 
 use crate::service::GaugeServiceError;
 
-/// `Ok` for `User` and `System` callers. `ServiceUser` (bots and infrastructure
+/// `Ok` for `User` and `System` callers. `ServiceUser` (service users and infrastructure
 /// services) and `Anonymous` callers get [`GaugeServiceError::NotAuthorized`]
 /// naming `operation`.
 ///

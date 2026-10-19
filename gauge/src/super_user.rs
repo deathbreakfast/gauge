@@ -115,7 +115,7 @@ async fn load_super_user_group_raw(system: &Valence) -> anyhow::Result<Option<Pe
 /// # Errors
 ///
 /// [`crate::service::GaugeServiceError::NotAuthorized`] when `system` belongs to a
-/// service user (such as a bot) or an anonymous caller; Valence failures otherwise.
+/// service user (such as a service user) or an anonymous caller; Valence failures otherwise.
 pub async fn ensure_super_user_group(system: &Valence) -> anyhow::Result<PermissionGroup> {
     crate::actor_guard::refuse_unattributed_writer(system, "ensure_super_user_group")?;
     if let Some(existing) = load_super_user_group_raw(system).await? {

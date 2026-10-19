@@ -142,7 +142,7 @@ const GLUON_OPERATOR_GROUP_DEFS: &[(&str, &str, &str, &[&str])] = &[
 /// # Errors
 ///
 /// [`crate::service::GaugeServiceError::NotAuthorized`] when `v` belongs to a
-/// service user (such as a bot) or an anonymous caller; otherwise Valence
+/// service user (such as a service user) or an anonymous caller; otherwise Valence
 /// failures while ensuring a group or grant.
 pub async fn ensure_gluon_default_operator_groups(v: &Valence) -> anyhow::Result<()> {
     crate::actor_guard::refuse_unattributed_writer(v, "ensure_gluon_default_operator_groups")?;

@@ -1,15 +1,15 @@
 use valence::prelude::*;
 use valence::privacy_policies::common::{AUTHENTICATED, SYSTEM_ONLY};
-use crate::bots::BOT_PRINCIPAL_BOT_MANAGER;
+use crate::service_users::SERVICE_USER_PRINCIPAL_MANAGER;
 use crate::privacy_policies::SUPER_USER_GROUP_MEMBER;
 
 valence_schema! {
-    PermissionBotPrincipal {
+    PermissionServiceUserPrincipal {
         repository: "https://github.com/unified-field-dev/gauge",
-        table: "permission_bot_principal",
+        table: "permission_service_user_principal",
         version: "0.1.0",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
-        description: "Principal wrapper for Lepton bot accounts in permission group membership",
+        description: "Principal wrapper for Lepton service users in permission group membership",
 
         traits: [PermissionPrincipal],
 
@@ -28,7 +28,7 @@ valence_schema! {
             },
             delete: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
-                allow: [SYSTEM_ONLY, BOT_PRINCIPAL_BOT_MANAGER],
+                allow: [SYSTEM_ONLY, SERVICE_USER_PRINCIPAL_MANAGER],
             },
         },
 
@@ -38,19 +38,19 @@ valence_schema! {
                 primary_key: true,
                 required: true,
             },
-            bot: {
-                r#type: FieldType::Record("bot"),
+            service_user: {
+                r#type: FieldType::Record("service_user_account"),
                 required: true,
             },
         ],
 
         connections: [
-            bot: {
-                table: "bot",
+            service_user: {
+                table: "service_user_account",
                 cardinality: HasOne,
                 required: true,
                 on_delete: Cascade,
-                model: "lepton::generated::Bot",
+                model: "lepton::generated::ServiceUserAccount",
             },
         ],
     }
