@@ -15,17 +15,22 @@ pub enum PrincipalKind {
     User,
     /// A permission group (which may itself contain users and nested groups).
     Group,
+    /// A Lepton service user (non-human). Only ever a group member.
+    ServiceUser,
 }
 
-/// Lightweight reference to a principal (user or group) for display in UI lists.
+/// Lightweight reference to a principal (user, group, or service user) for display in UI lists.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrincipalRefDto {
-    /// Whether this principal is a user or a group.
+    /// Whether this principal is a user, a group, or a service user.
     pub kind: PrincipalKind,
     /// Bare record id of the principal.
     pub id: String,
-    /// Display label (name/email) for the principal.
+    /// Display label (name/email) for the principal. A service user's handle.
     pub label: String,
+    /// Display label of the owning user. Set only for [`PrincipalKind::ServiceUser`],
+    /// and `None` when the service user has no owner or the owner can't be loaded.
+    pub owner_label: Option<String>,
 }
 
 /// Input for creating a new permission.

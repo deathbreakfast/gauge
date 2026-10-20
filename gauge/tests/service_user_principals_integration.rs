@@ -79,12 +79,17 @@ async fn tm_service_user_member_gets_group_permission_happy() {
         (true, true)
     );
     assert!(service_user_is_member(&w, READERS, &service_user).await);
-    // Group screens list users and groups only; a service user member is never shown as a user.
+    // Group screens list the service user as its own kind, never as a user.
     let detail = get_group_detail(READERS, &w.as_user("carol"))
         .await
         .expect("detail")
         .expect("group exists");
-    assert!(detail.members.iter().all(|m| m.id != service_user.as_str()));
+    let listed = detail
+        .members
+        .iter()
+        .find(|m| m.id == service_user.as_str())
+        .expect("service user listed");
+    assert_eq!(listed.kind, gauge::types::PrincipalKind::ServiceUser);
 }
 
 #[tokio::test]

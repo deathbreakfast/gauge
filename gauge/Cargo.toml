@@ -178,3 +178,7 @@ required-features = ["ssr"]
 [[test]]
 name = "service_user_write_sweep"
 required-features = ["ssr"]
+
+[[test]]
+name = "group_service_user_members_integration"
+required-features = ["ssr"]
