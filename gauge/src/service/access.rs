@@ -112,7 +112,8 @@ pub async fn permission_allows_user(
                     }
                 }
             }
-            None => {}
+            // Service users are only members; they never appear on an allow list.
+            Some(PrincipalKind::ServiceUser) | None => {}
         }
     }
 

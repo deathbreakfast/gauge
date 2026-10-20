@@ -1,4 +1,8 @@
 //! Add and remove Lepton service users as permission group members.
+//!
+//! Members show up in [`get_group_detail`](super::get_group_detail) as
+//! [`PrincipalKind::ServiceUser`](crate::types::PrincipalKind::ServiceUser) entries, with the
+//! service user's handle as the label and the owner's label in `owner_label`.
 
 use lepton_identity::service_users::ServiceUserId;
 use valence::{Model, RecordId, Valence};

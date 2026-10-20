@@ -67,6 +67,7 @@ jobs:
             --test service_user_principals_integration \
             --test service_user_gate_integration \
             --test service_user_write_sweep \
+            --test group_service_user_members_integration \
             -- -D warnings
       - name: cargo clippy (embedded-gauge-host)
         run: cargo clippy -p embedded-gauge-host --all-targets -- -D warnings
@@ -102,6 +103,7 @@ jobs:
           --test service_user_principals_integration
           --test service_user_gate_integration
           --test service_user_write_sweep
+          --test group_service_user_members_integration
       - name: cargo check + run (embedded-gauge-host)
         run: |
           cargo check -p embedded-gauge-host

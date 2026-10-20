@@ -223,6 +223,7 @@ pub fn principal_kind_from_record(r: &RecordId) -> Option<PrincipalKind> {
     match r.table() {
         "permission_user_principal" => Some(PrincipalKind::User),
         "permission_group_principal" => Some(PrincipalKind::Group),
+        crate::service_users::SERVICE_USER_PRINCIPAL_TABLE => Some(PrincipalKind::ServiceUser),
         _ => None,
     }
 }
@@ -331,6 +332,7 @@ pub async fn principal_ref_from_record(
                 kind: PrincipalKind::User,
                 id: user_id,
                 label,
+                owner_label: None,
             }))
         }
         Some(PrincipalKind::Group) => {
@@ -348,10 +350,59 @@ pub async fn principal_ref_from_record(
                 kind: PrincipalKind::Group,
                 id: group_id,
                 label,
+                owner_label: None,
             }))
         }
+        Some(PrincipalKind::ServiceUser) => service_user_principal_ref(&principal_id, v).await,
         None => Ok(None),
     }
+}
+
+/// Resolve a service user principal row to a display reference: the service user's handle as
+/// the label and the owning user's label as `owner_label`. `None` when the principal or its
+/// service user is gone or unreadable under `v`.
+async fn service_user_principal_ref(
+    principal_id: &str,
+    v: &Valence,
+) -> anyhow::Result<Option<PrincipalRefDto>> {
+    let Some(row) = crate::actor_can_raw::raw_get_json(
+        crate::service_users::SERVICE_USER_PRINCIPAL_TABLE,
+        principal_id,
+        v,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let principal: crate::generated::PermissionServiceUserPrincipal = serde_json::from_value(row)?;
+    let service_user_id =
+        valence::extract_id_from_record(principal.service_user()).unwrap_or_default();
+    if service_user_id.is_empty() {
+        return Ok(None);
+    }
+    let Some(account) = lepton::generated::ServiceUserAccount::get(&service_user_id, v, valence::use_!(r"When **Gauge** shows the **members of a permission group**, we **load each service user member** so the group detail can show its handle and who owns it. Editors of the group see that list; nothing else uses it."))
+        .await?
+    else {
+        return Ok(None);
+    };
+    let owner_label = match account
+        .user()
+        .and_then(|owner| valence::extract_id_from_record(owner).ok())
+    {
+        Some(owner_id) => match lepton::generated::User::get(&owner_id, v, valence::use_!(r"When **Gauge** shows a **service user in a group's member list**, we **load its owning user** so the list can show who owns the service user. Editors of the group see the owner's name; nothing else uses it.")).await {
+            Ok(Some(owner)) => {
+                Some(crate::search_sources::user_principal_label(&owner, &owner_id, v).await)
+            }
+            Ok(None) | Err(_) => Some(owner_id),
+        },
+        None => None,
+    };
+    Ok(Some(PrincipalRefDto {
+        kind: PrincipalKind::ServiceUser,
+        id: service_user_id,
+        label: account.handle().clone(),
+        owner_label,
+    }))
 }
 
 pub const fn map_request_status(status: &PermissionRequestStatus) -> PermissionRequestStatusDto {
@@ -370,12 +421,19 @@ pub fn redact_user_principal_label(
     reference: PrincipalRefDto,
     reveal_email: bool,
 ) -> PrincipalRefDto {
-    if reveal_email || reference.kind != PrincipalKind::User {
+    if reveal_email {
         return reference;
     }
-    PrincipalRefDto {
-        label: reference.id.clone(),
-        ..reference
+    match reference.kind {
+        PrincipalKind::User => PrincipalRefDto {
+            label: reference.id.clone(),
+            ..reference
+        },
+        PrincipalKind::ServiceUser => PrincipalRefDto {
+            owner_label: None,
+            ..reference
+        },
+        PrincipalKind::Group => reference,
     }
 }
 
@@ -501,7 +559,8 @@ pub async fn group_has_user(
                         }
                     }
                 }
-                None => {}
+                // Service users never count as people: they neither own nor inherit user checks.
+                Some(PrincipalKind::ServiceUser) | None => {}
             }
         }
 
@@ -527,7 +586,8 @@ pub async fn group_has_user(
                         }
                     }
                 }
-                None => {}
+                // Service users never count as people: they neither own nor inherit user checks.
+                Some(PrincipalKind::ServiceUser) | None => {}
             }
         }
     }
@@ -568,7 +628,8 @@ pub async fn group_has_owner_user(
                         }
                     }
                 }
-                None => {}
+                // Service users never count as people: they neither own nor inherit user checks.
+                Some(PrincipalKind::ServiceUser) | None => {}
             }
         }
     }
@@ -609,7 +670,8 @@ pub async fn domain_has_owner_user(
                     }
                 }
             }
-            None => {}
+            // Service users never count as people: they neither own nor inherit user checks.
+                Some(PrincipalKind::ServiceUser) | None => {}
         }
     }
     Ok(false)
