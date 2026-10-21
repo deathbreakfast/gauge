@@ -408,7 +408,14 @@
 //! ```
 //!
 //! Duplicate names and empty required fields return `anyhow` errors. List/get/
-//! update/delete helpers live on [`service`]. Next:
+//! update/delete helpers live on [`service`].
+//!
+//! [`service::create_group`] makes the creator an owner and a member. Use
+//! [`service::create_group_owner_only`] when the creator should manage the group without
+//! belonging to it, and [`service::clear_group_members`] to empty a group of its users, nested
+//! groups and service users in one call, for example when a team is archived. Owners are kept.
+//! Gauge counts an owner as holding what the group holds, so an owner keeps the group's
+//! grants either way; remove the ownership too if the creator should lose them. Next:
 //! [Grant and revoke](#grant-and-revoke-allow-lists).
 //!
 //! ## Grant and revoke allow-lists
@@ -543,7 +550,8 @@
 //! 1. Call [`service::add_group_member_service_user`] with the group id and the service user id.
 //! 2. Check as the service user: build its Valence from `service_user_id.actor()` and call
 //!    `actor_can`.
-//! 3. Call [`service::remove_group_member_service_user`] to take the access away.
+//! 3. Call [`service::remove_group_member_service_user`] to take the access away, or
+//!    [`service::clear_group_members`] to remove every member of the group at once.
 //!
 //! ```ignore
 //! use gauge::service::{actor_can, add_group_member_service_user, remove_group_member_service_user};

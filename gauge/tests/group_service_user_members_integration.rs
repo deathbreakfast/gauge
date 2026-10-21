@@ -93,3 +93,89 @@ async fn deleted_service_user_is_skipped_sad() {
         .iter()
         .all(|m| m.id != service_user.as_str()));
 }
+
+#[tokio::test]
+async fn clear_members_removes_service_user_and_keeps_its_principal_happy() {
+    use gauge::service::{
+        add_group_member_group, add_group_owner_user, clear_group_members, create_group_owner_only,
+    };
+    use gauge::types::PermissionGroupCreateInput;
+
+    let w = world().await;
+    let carol = w.as_user("carol");
+    let service_user = create_service_user(&w, "alice", "reader-bot").await;
+    let svc_ctx = w.as_service_user(&service_user);
+    let make = |name: &str| PermissionGroupCreateInput {
+        name: name.to_string(),
+        description: String::new(),
+    };
+    let nested = create_group_owner_only(make("Nested bots"), &carol)
+        .await
+        .expect("nested");
+    let nested_id = common::record_pk_id(nested.id());
+    add_group_member_user(&nested_id, "dave", &carol)
+        .await
+        .expect("nested member");
+
+    // READERS grants READ and has no owners; carol is a super user.
+    add_group_member_user(READERS, "bob", &carol).await.unwrap();
+    add_group_member_user(READERS, "dave", &carol)
+        .await
+        .unwrap();
+    add_group_member_service_user(READERS, &service_user, &carol)
+        .await
+        .unwrap();
+    add_group_member_group(READERS, &nested_id, &carol)
+        .await
+        .unwrap();
+    add_group_owner_user(READERS, "alice", &carol)
+        .await
+        .unwrap();
+    assert!(
+        gauge::service::actor_can(&svc_ctx, service_users_fixtures::READ)
+            .await
+            .unwrap()
+    );
+
+    let removed = clear_group_members(READERS, &carol).await.expect("clear");
+    assert_eq!(removed, 4);
+
+    let detail = get_group_detail(READERS, &carol).await.unwrap().unwrap();
+    assert!(detail.members.is_empty(), "{:?}", detail.members);
+    assert_eq!(
+        detail
+            .owner_users
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect::<Vec<_>>(),
+        ["alice"]
+    );
+    let nested_detail = get_group_detail(&nested_id, &carol).await.unwrap().unwrap();
+    assert_eq!(
+        nested_detail
+            .members
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect::<Vec<_>>(),
+        ["dave"]
+    );
+    assert!(
+        !gauge::service::actor_can(&svc_ctx, service_users_fixtures::READ)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !gauge::service::actor_can(&w.as_user("bob"), service_users_fixtures::READ)
+            .await
+            .unwrap()
+    );
+
+    // The service user's principal row survives, so it can be added again.
+    add_group_member_service_user(READERS, &service_user, &carol)
+        .await
+        .expect("re-add");
+    assert!(members(&w, "carol")
+        .await
+        .iter()
+        .any(|m| m.id == service_user.as_str()));
+}

@@ -136,6 +136,17 @@ async fn service_writes(
         )
     );
     attempt!(
+        "create_group_owner_only",
+        svc::create_group_owner_only(
+            PermissionGroupCreateInput {
+                name: "Escalators owner only".into(),
+                description: String::new()
+            },
+            v
+        )
+    );
+    attempt!("clear_group_members", svc::clear_group_members(READERS, v));
+    attempt!(
         "update_group",
         svc::update_group(READERS, "Renamed".into(), String::new(), v)
     );
