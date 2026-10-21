@@ -7,7 +7,7 @@
 use lepton_identity::service_users::ServiceUserId;
 use valence::{Model, RecordId, Valence};
 
-use crate::generated::{PermissionGroup, PermissionServiceUserPrincipal};
+use crate::generated::PermissionServiceUserPrincipal;
 use crate::service_users::{service_user_principal_id, SERVICE_USER_PRINCIPAL_TABLE};
 use crate::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID};
 use crate::types::HistoryDiffItemDto;
@@ -16,24 +16,8 @@ use super::helpers::{
     get_group_raw, group_has_owner_user, persist_history_entry, require_model_id, require_user_id,
     user_id_candidates,
 };
+use super::membership::group_for_member_edit;
 use super::GaugeServiceError;
-
-/// Load the group and check the caller owns it (directly or through a group) or is a super user.
-async fn group_for_member_edit(
-    group_id: &str,
-    actor_user_id: &str,
-    v: &Valence,
-) -> anyhow::Result<PermissionGroup> {
-    let group = get_group_raw(group_id, v)
-        .await?
-        .ok_or_else(|| GaugeServiceError::not_found("permission_group", group_id))?;
-    if !group_has_owner_user(&group, &user_id_candidates(actor_user_id), v).await?
-        && !actor_is_super_user(v).await?
-    {
-        return Err(GaugeServiceError::not_authorized("edit group membership").into());
-    }
-    Ok(group)
-}
 
 async fn get_service_user_principal_raw(
     service_user: &ServiceUserId,

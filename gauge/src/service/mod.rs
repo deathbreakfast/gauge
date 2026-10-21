@@ -8,7 +8,8 @@
 //! - Permission/group CRUD with ownership/super-user authorization; domain
 //!   taxonomy CRUD with domain owners or Super User.
 //! - Principal graph management (users/groups, nested membership, owners), plus
-//!   service users as group members.
+//!   service users as group members; owner-only group creation and clearing
+//!   every member of a group in one call.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
 //! - Permission request workflow (create/list/review/decide).
 //! - History/audit projection for changed fields and actions.
@@ -25,8 +26,10 @@
 mod access;
 mod domains;
 mod error;
+mod group_membership_bulk;
 mod groups;
 mod helpers;
+mod membership;
 mod permissions;
 mod requests;
 mod service_user_members;
@@ -41,10 +44,11 @@ pub use domains::{
     remove_domain_owner_user, update_domain,
 };
 pub use error::GaugeServiceError;
+pub use group_membership_bulk::clear_group_members;
 pub use groups::{
     add_group_member_group, add_group_member_user, add_group_owner_user, create_group,
-    delete_group, remove_group_member_group, remove_group_member_user, remove_group_owner_user,
-    update_group,
+    create_group_owner_only, delete_group, remove_group_member_group, remove_group_member_user,
+    remove_group_owner_user, update_group,
 };
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,

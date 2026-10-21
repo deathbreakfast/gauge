@@ -348,3 +348,125 @@ async fn list_history_caps_at_max_history_list_rows() {
         "expected full page of {MAX_HISTORY_LIST_ROWS} when more rows exist"
     );
 }
+
+fn removed_ids(history: &[gauge::types::HistoryEntryDto], field: &str) -> Vec<Vec<String>> {
+    history
+        .iter()
+        .flat_map(|e| e.diffs.iter())
+        .filter(|d| d.field == field && d.new_value.is_null())
+        .map(|d| {
+            let text = d.old_value.as_str().expect("history text");
+            let mut ids: Vec<String> = serde_json::from_str(text).expect("id array");
+            ids.sort();
+            ids
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn clear_members_records_removed_ids_once_and_is_idempotent() {
+    let system = test_valence(Actor::System {
+        operation: "clear_history_setup".to_string(),
+    })
+    .await;
+    for id in ["owner", "m1", "m2", "n1"] {
+        seed_user(id, &format!("{id}@example.com"), &system).await;
+    }
+    let owner = system.with_actor(Actor::User {
+        user_id: "owner".to_string(),
+    });
+    let input = |name: &str| PermissionGroupCreateInput {
+        name: name.to_string(),
+        description: String::new(),
+    };
+    let group_id = valence::extract_id_from_record(
+        service::create_group_owner_only(input("Clear Me"), &owner)
+            .await
+            .expect("group")
+            .id()
+            .expect("id"),
+    )
+    .expect("pk");
+    let nested_id = valence::extract_id_from_record(
+        service::create_group_owner_only(input("Nested"), &owner)
+            .await
+            .expect("nested")
+            .id()
+            .expect("id"),
+    )
+    .expect("pk");
+    service::add_group_member_user(&group_id, "m1", &owner)
+        .await
+        .unwrap();
+    service::add_group_member_user(&group_id, "m2", &owner)
+        .await
+        .unwrap();
+    service::add_group_member_group(&group_id, &nested_id, &owner)
+        .await
+        .unwrap();
+
+    // Empty group: nothing to remove, nothing written.
+    let empty = service::create_group_owner_only(input("Empty"), &owner)
+        .await
+        .unwrap();
+    let empty_id = valence::extract_id_from_record(empty.id().unwrap()).unwrap();
+    assert_eq!(
+        service::clear_group_members(&empty_id, &owner)
+            .await
+            .unwrap(),
+        0
+    );
+    let empty_history =
+        service::list_history(&owner, Some("permission_group".into()), Some(empty_id))
+            .await
+            .unwrap();
+    assert!(removed_ids(&empty_history, "member_users").is_empty());
+
+    assert_eq!(
+        service::clear_group_members(&group_id, &owner)
+            .await
+            .unwrap(),
+        3
+    );
+    let history = service::list_history(
+        &owner,
+        Some("permission_group".into()),
+        Some(group_id.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        removed_ids(&history, "member_users"),
+        vec![vec!["m1".to_string(), "m2".to_string()]]
+    );
+    assert_eq!(
+        removed_ids(&history, "member_groups"),
+        vec![vec![nested_id]]
+    );
+    assert!(removed_ids(&history, "member_service_users").is_empty());
+    for entry in history.iter().filter(|e| {
+        e.diffs.iter().any(|d| {
+            d.new_value.is_null() && d.old_value.as_str().is_some_and(|s| s.starts_with('['))
+        })
+    }) {
+        assert_eq!(
+            entry
+                .actor_user_id
+                .as_deref()
+                .map(|id| id.trim_start_matches("user:")),
+            Some("owner")
+        );
+    }
+
+    // A second clear removes nothing and writes nothing.
+    assert_eq!(
+        service::clear_group_members(&group_id, &owner)
+            .await
+            .unwrap(),
+        0
+    );
+    let again = service::list_history(&owner, Some("permission_group".into()), Some(group_id))
+        .await
+        .unwrap();
+    assert_eq!(again.len(), history.len());
+}

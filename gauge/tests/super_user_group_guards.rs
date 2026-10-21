@@ -94,3 +94,30 @@ async fn nest_under_super_user_group_denied() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn clear_super_user_group_members_refused_for_super_user_sad() -> anyhow::Result<()> {
+    let system = test_valence(Actor::System {
+        operation: "super_user_clear_seed".to_string(),
+    })
+    .await;
+    seed_user_with("u_super", "super@example.com", true, &system).await;
+    common::seed_super_user_group_with_member(&system, "u_super").await;
+    let v = system.with_actor(Actor::User {
+        user_id: "u_super".to_string(),
+    });
+
+    let err = gauge::service::clear_group_members(SUPER_USER_GROUP_ID, &v)
+        .await
+        .expect_err("must refuse to clear the Super User group");
+    assert!(matches!(
+        err.downcast_ref::<gauge::service::GaugeServiceError>(),
+        Some(gauge::service::GaugeServiceError::Validation { message })
+            if message == "Cannot clear the members of the well-known Super User group"
+    ));
+    let detail = gauge::service::get_group_detail(SUPER_USER_GROUP_ID, &v)
+        .await?
+        .expect("super user group exists");
+    assert!(detail.members.iter().any(|m| m.id == "u_super"));
+    Ok(())
+}

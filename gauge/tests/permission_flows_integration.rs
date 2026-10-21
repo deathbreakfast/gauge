@@ -220,3 +220,309 @@ async fn duplicate_permission_and_group_names_are_rejected_sad() {
         "got {dup_perm_msg}"
     );
 }
+
+// ---- create_group_owner_only / clear_group_members -------------------------------------
+
+mod owner_only_and_clear {
+    use super::{record_pk_id, seed_user, test_valence};
+    use gauge::service::{self, GaugeServiceError};
+    use gauge::types::{
+        PermissionCreateInput, PermissionDomainCreateInput, PermissionGroupCreateInput,
+    };
+    use valence::{Actor, Valence};
+
+    fn input(name: &str) -> PermissionGroupCreateInput {
+        PermissionGroupCreateInput {
+            name: name.to_string(),
+            description: String::new(),
+        }
+    }
+
+    fn kind(err: &anyhow::Error) -> &GaugeServiceError {
+        err.downcast_ref::<GaugeServiceError>()
+            .unwrap_or_else(|| panic!("not a GaugeServiceError: {err:#}"))
+    }
+
+    struct Ctx {
+        system: Valence,
+    }
+
+    impl Ctx {
+        async fn new() -> Self {
+            let system = test_valence(Actor::System {
+                operation: "owner_only_setup".to_string(),
+            })
+            .await;
+            for id in ["a", "b", "c", "m1", "m2", "outsider"] {
+                seed_user(id, &format!("{id}@example.com"), &system).await;
+            }
+            Self { system }
+        }
+
+        fn user(&self, id: &str) -> Valence {
+            self.system.with_actor(Actor::User {
+                user_id: id.to_string(),
+            })
+        }
+    }
+
+    async fn detail(id: &str, v: &Valence) -> gauge::types::PermissionGroupDetailDto {
+        service::get_group_detail(id, v)
+            .await
+            .expect("detail")
+            .expect("group exists")
+    }
+
+    #[tokio::test]
+    async fn owner_only_create_has_owner_and_no_members_happy() {
+        let c = Ctx::new().await;
+        let a = c.user("a");
+        let group = service::create_group_owner_only(input("Owner Only"), &a)
+            .await
+            .expect("create owner-only");
+        let id = record_pk_id(group.id());
+
+        let d = detail(&id, &a).await;
+        assert_eq!(d.owner_users.len(), 1);
+        assert_eq!(d.owner_users[0].id, "a");
+        assert!(d.members.is_empty(), "no member edge: {:?}", d.members);
+
+        // Still the owner: can add a member.
+        service::add_group_member_user(&id, "m1", &a)
+            .await
+            .expect("owner adds member");
+
+        // A second user owns the permission and grants it to the group, so the grant isn't
+        // the creator's own.
+        let b = c.user("b");
+        let perm_owners = service::create_group(input("Perm Owners"), &b)
+            .await
+            .expect("owners");
+        let domain = service::create_domain(
+            PermissionDomainCreateInput {
+                name: "D".to_string(),
+                description: String::new(),
+            },
+            &b,
+        )
+        .await
+        .expect("domain");
+        let perm = service::create_permission(
+            PermissionCreateInput {
+                name: "OwnerOnlyPerm".to_string(),
+                description: String::new(),
+                owners_group_id: record_pk_id(perm_owners.id()),
+                domain_id: record_pk_id(domain.id()),
+            },
+            &b,
+        )
+        .await
+        .expect("permission");
+        service::grant_permission_to_group(&record_pk_id(perm.id()), &id, &b)
+            .await
+            .expect("grant to group");
+        // Group ownership counts as holding the group's grants, so owner-only creation
+        // drops the member edge but not this access. Pinned so a change here is noticed.
+        assert!(service::actor_can(&a, "OwnerOnlyPerm").await.unwrap());
+        assert!(service::actor_can(&c.user("m1"), "OwnerOnlyPerm")
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn create_group_still_makes_creator_owner_and_member_happy() {
+        let c = Ctx::new().await;
+        let a = c.user("a");
+        let group = service::create_group(input("Both"), &a)
+            .await
+            .expect("create");
+        let d = detail(&record_pk_id(group.id()), &a).await;
+        assert_eq!(
+            d.owner_users
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>(),
+            ["a"]
+        );
+        assert_eq!(
+            d.members.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+            ["a"]
+        );
+    }
+
+    #[tokio::test]
+    async fn owner_only_create_without_user_record_is_refused_sad() {
+        let c = Ctx::new().await;
+        let ghost = c.user("ghost");
+        let err = service::create_group_owner_only(input("Ghost Group"), &ghost)
+            .await
+            .expect_err("no user row");
+        assert!(
+            matches!(kind(&err), GaugeServiceError::NotAuthorized { operation } if operation == "create group as owner")
+        );
+        // Nothing was saved: the name is still free.
+        service::create_group_owner_only(input("Ghost Group"), &c.user("a"))
+            .await
+            .expect("name unused after rejected create");
+    }
+
+    #[tokio::test]
+    async fn owner_only_create_rejects_bad_names_and_saves_nothing_sad() {
+        let c = Ctx::new().await;
+        let a = c.user("a");
+        service::create_group_owner_only(input("Taken"), &a)
+            .await
+            .expect("first");
+
+        let dup = service::create_group_owner_only(input("Taken"), &a)
+            .await
+            .expect_err("duplicate");
+        assert!(
+            matches!(kind(&dup), GaugeServiceError::Validation { message } if message == "Permission group name already exists: Taken")
+        );
+
+        let empty = service::create_group_owner_only(input("   "), &a)
+            .await
+            .expect_err("empty");
+        assert!(
+            matches!(kind(&empty), GaugeServiceError::Validation { message } if message == "Group name is required")
+        );
+
+        let reserved =
+            service::create_group_owner_only(input(gauge::super_user::SUPER_USER_GROUP_NAME), &a)
+                .await
+                .expect_err("reserved");
+        assert!(
+            matches!(kind(&reserved), GaugeServiceError::Validation { message } if message.contains("reserved for the well-known super-user group"))
+        );
+        let reserved_plain =
+            service::create_group(input(gauge::super_user::SUPER_USER_GROUP_NAME), &a)
+                .await
+                .expect_err("reserved via create_group");
+        assert!(matches!(
+            kind(&reserved_plain),
+            GaugeServiceError::Validation { .. }
+        ));
+
+        let groups = service::list_groups(&a, None).await.expect("list");
+        assert_eq!(groups.iter().filter(|g| g.name == "Taken").count(), 1);
+        assert_eq!(groups.len(), 1, "rejected creates left no row: {groups:?}");
+    }
+
+    #[tokio::test]
+    async fn create_functions_refuse_callers_who_are_not_signed_in_sad() {
+        let c = Ctx::new().await;
+        assert!(service::create_group(input("X1"), &c.system).await.is_err());
+        assert!(service::create_group_owner_only(input("X2"), &c.system)
+            .await
+            .is_err());
+        assert!(service::clear_group_members("anything", &c.system)
+            .await
+            .is_err());
+    }
+
+    async fn group_with_members(c: &Ctx) -> String {
+        let a = c.user("a");
+        let group = service::create_group_owner_only(input("Team"), &a)
+            .await
+            .expect("create");
+        let id = record_pk_id(group.id());
+        service::add_group_member_user(&id, "m1", &a)
+            .await
+            .expect("m1");
+        service::add_group_member_user(&id, "m2", &a)
+            .await
+            .expect("m2");
+        id
+    }
+
+    #[tokio::test]
+    async fn clear_by_owner_removes_members_and_keeps_owners_happy() {
+        let c = Ctx::new().await;
+        let a = c.user("a");
+        let id = group_with_members(&c).await;
+        let nested = record_pk_id(
+            service::create_group_owner_only(input("Nested"), &a)
+                .await
+                .unwrap()
+                .id(),
+        );
+        service::add_group_member_user(&nested, "b", &a)
+            .await
+            .unwrap();
+        service::add_group_member_group(&id, &nested, &a)
+            .await
+            .unwrap();
+        service::add_group_owner_user(&id, "c", &a).await.unwrap();
+
+        let removed = service::clear_group_members(&id, &a).await.expect("clear");
+        assert_eq!(removed, 3);
+
+        let d = detail(&id, &a).await;
+        assert!(d.members.is_empty(), "{:?}", d.members);
+        let mut owners: Vec<_> = d.owner_users.iter().map(|p| p.id.clone()).collect();
+        owners.sort();
+        assert_eq!(owners, ["a", "c"]);
+        let n = detail(&nested, &a).await;
+        assert_eq!(
+            n.members.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+            ["b"]
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_denied_for_member_and_outsider_leaves_state_unchanged_sad() {
+        let c = Ctx::new().await;
+        let a = c.user("a");
+        let id = group_with_members(&c).await;
+        let history_before =
+            service::list_history(&a, Some("permission_group".into()), Some(id.clone()))
+                .await
+                .unwrap()
+                .len();
+
+        for who in ["m1", "outsider"] {
+            let err = service::clear_group_members(&id, &c.user(who))
+                .await
+                .expect_err("denied");
+            assert!(
+                matches!(kind(&err), GaugeServiceError::NotAuthorized { operation } if operation == "edit group membership"),
+                "{who}: {err:#}"
+            );
+        }
+        let d = detail(&id, &a).await;
+        assert_eq!(d.members.len(), 2);
+        let history_after = service::list_history(&a, Some("permission_group".into()), Some(id))
+            .await
+            .unwrap()
+            .len();
+        assert_eq!(history_before, history_after);
+    }
+
+    #[tokio::test]
+    async fn clear_by_super_user_who_is_not_owner_succeeds_happy() {
+        let c = Ctx::new().await;
+        super::super_user_seed(&c.system, "b").await;
+        let id = group_with_members(&c).await;
+        let removed = service::clear_group_members(&id, &c.user("b"))
+            .await
+            .expect("super user clears");
+        assert_eq!(removed, 2);
+        assert!(detail(&id, &c.user("a")).await.members.is_empty());
+    }
+
+    #[tokio::test]
+    async fn clear_missing_group_is_not_found_sad() {
+        let c = Ctx::new().await;
+        let err = service::clear_group_members("no_such_group", &c.user("a"))
+            .await
+            .expect_err("missing");
+        assert!(
+            matches!(kind(&err), GaugeServiceError::NotFound { entity, id } if entity == "permission_group" && id == "no_such_group")
+        );
+    }
+}
+
+async fn super_user_seed(system: &valence::Valence, user: &str) {
+    common::seed_super_user_group_with_member(system, user).await;
+}

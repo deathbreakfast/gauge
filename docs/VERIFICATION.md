@@ -182,6 +182,24 @@ Covering integ tests (service primary):
 - `owner_can_delegate_group_ownership` / `owner_can_remove_delegated_group_owner`
 - `history_tracks_description_and_membership_changes` /
   `list_history_hides_subjects_outsider_cannot_edit_sad`
+- Owner-only creation and bulk member clear (`permission_flows_integration`):
+  `owner_only_create_has_owner_and_no_members_happy`,
+  `create_group_still_makes_creator_owner_and_member_happy`,
+  `owner_only_create_without_user_record_is_refused_sad`,
+  `owner_only_create_rejects_bad_names_and_saves_nothing_sad`,
+  `create_functions_refuse_callers_who_are_not_signed_in_sad`,
+  `clear_by_owner_removes_members_and_keeps_owners_happy`,
+  `clear_by_super_user_who_is_not_owner_succeeds_happy`,
+  `clear_denied_for_member_and_outsider_leaves_state_unchanged_sad`,
+  `clear_missing_group_is_not_found_sad`
+- Bulk clear, other suites: `clear_members_removes_inherited_grants_only_for_that_group`
+  (`privacy_authorization_integration`),
+  `clear_members_records_removed_ids_once_and_is_idempotent` (`history_integration`),
+  `clear_super_user_group_members_refused_for_super_user_sad`
+  (`super_user_group_guards`),
+  `clear_members_removes_service_user_and_keeps_its_principal_happy`
+  (`group_service_user_members_integration`); `service_user_write_sweep` covers both
+  new functions.
 - `creator_becomes_maintainer_outsider_cannot_update_tm_sec_07`
 - `service_and_side_effects_must_not_elevate_to_system_tm_sec_06`
   (`no_elevate_path_gate`)
