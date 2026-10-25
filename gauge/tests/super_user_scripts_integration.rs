@@ -149,14 +149,20 @@ async fn demote_personal_account_owners_switches_owner_to_member_and_sync_skips_
                 .expect("load")
                 .expect("membership")
                 .role()
-                .clone()
+                .cloned()
         }
     };
-    assert_eq!(role_of("m_legacy").await, AccountMembershipRole::Member);
-    assert_eq!(role_of("m_admin").await, AccountMembershipRole::SuperAdmin);
+    assert_eq!(
+        role_of("m_legacy").await,
+        Some(AccountMembershipRole::Member)
+    );
+    assert_eq!(
+        role_of("m_admin").await,
+        Some(AccountMembershipRole::SuperAdmin)
+    );
     assert_eq!(
         role_of("m_platform").await,
-        AccountMembershipRole::Owner,
+        Some(AccountMembershipRole::Owner),
         "an owner listed in UF_SUPER_USER_EMAILS keeps the platform role"
     );
 

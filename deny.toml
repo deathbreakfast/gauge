@@ -6,6 +6,7 @@ yanked = "warn"
 ignore = [
     { id = "RUSTSEC-2023-0071", reason = "rsa Marvin Attack timing sidechannel; no fixed upgrade available upstream" },
     { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained; transitive via surrealmx -> surrealdb-core (surreal backend)" },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 timing; transitive via surrealdb-core -> jsonwebtoken -> p256 (surreal backend); fix needs 0.7, blocked until surrealdb moves" },
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained; transitive via leptos (either_of)" },
     { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained; transitive via leptos_macro" },
     # quick-xml <0.41 pinned by object_store 0.13 via surrealdb-core; no bump until surrealdb moves.
