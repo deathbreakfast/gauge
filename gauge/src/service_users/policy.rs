@@ -1,4 +1,4 @@
-//! Privacy rule letting a service user's manager delete its Gauge principal row.
+//! Privacy rule letting a service user's manager create, update, or delete its Gauge principal row.
 
 use std::any::Any;
 
