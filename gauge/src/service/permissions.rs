@@ -173,6 +173,52 @@ pub async fn grant_permission_to_user(
     Ok(())
 }
 
+/// Grant `permission_id` directly to `service_user` (owner or super-user of the permission).
+///
+/// Mirrors [`grant_permission_to_user`] for a service user: it writes an allowed-principal edge
+/// to the service user's principal, which [`crate::service::actor_can`] then honours while the
+/// service user is active. Used by the approve path for a permission request filed on behalf of
+/// a service user. The caller stays the session actor — never `Actor::System`.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError): `NotAuthorized` when the caller can't edit
+/// the permission. Valence failures otherwise.
+pub async fn grant_permission_to_service_user(
+    permission_id: &str,
+    service_user: &lepton_identity::service_users::ServiceUserId,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    let actor_user_id = require_user_id(v)?;
+    let system = v;
+    let permission = get_permission_raw(permission_id, system)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Permission not found: {permission_id}"))?;
+    if !can_edit_permission(&permission, v).await? {
+        return Err(super::GaugeServiceError::not_authorized("edit permission").into());
+    }
+
+    let principal =
+        super::service_user_members::ensure_service_user_principal(service_user, system).await?;
+    permission
+        .relate_to_allowed_principal_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **grants a permission to a service user** in **Gauge**, we **write the allowed-principal edge** so the service user may use the permission while it is active. Operators see the updated allow list on the permission detail."))
+        .await?;
+    persist_history_entry(
+        v,
+        "permission",
+        permission_id.to_string(),
+        "grant_service_user",
+        Some(actor_user_id),
+        vec![HistoryDiffItemDto {
+            field: "granted_service_users".to_string(),
+            old_value: serde_json::Value::Null,
+            new_value: serde_json::Value::String(service_user.as_str().to_string()),
+        }],
+    )
+    .await?;
+    Ok(())
+}
+
 /// Revoke `permission_id` from `user_id` (owner or super-user only). Records history.
 pub async fn revoke_permission_from_user(
     permission_id: &str,

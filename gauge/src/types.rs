@@ -192,6 +192,11 @@ pub struct PermissionRequestCreateInput {
     pub target_id: String,
     /// Requestor-supplied justification.
     pub reason: String,
+    /// When set, the request is for a service user the requestor owns, named by its handle or
+    /// id. The requestor must own that active service user, or hold
+    /// `lepton.service_user.manage_any`.
+    #[serde(default)]
+    pub on_behalf_of: Option<String>,
 }
 
 /// Approve or deny decision for a permission request.
@@ -237,4 +242,9 @@ pub struct PermissionRequestRowDto {
     pub updated_at: String,
     /// Whether the current actor may review (approve/deny) this request.
     pub can_review: bool,
+    /// The service user the request is for, when filed on behalf of one: its handle
+    /// ([`PrincipalRefDto::label`]) and owner ([`PrincipalRefDto::owner_label`]). `None` for a
+    /// plain user request.
+    #[serde(default)]
+    pub on_behalf_of: Option<PrincipalRefDto>,
 }

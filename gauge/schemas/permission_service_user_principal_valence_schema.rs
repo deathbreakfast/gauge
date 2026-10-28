@@ -1,7 +1,7 @@
 use valence::prelude::*;
 use valence::privacy_policies::common::{AUTHENTICATED, SYSTEM_ONLY};
 use crate::service_users::SERVICE_USER_PRINCIPAL_MANAGER;
-use crate::privacy_policies::SUPER_USER_GROUP_MEMBER;
+use crate::privacy_policies::{REQUEST_NAMED_SERVICE_USER_PRINCIPAL, SUPER_USER_GROUP_MEMBER};
 
 valence_schema! {
     PermissionServiceUserPrincipal {
@@ -16,7 +16,7 @@ valence_schema! {
         policies: {
             read: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
-                allow: [AUTHENTICATED, SYSTEM_ONLY],
+                allow: [AUTHENTICATED, SYSTEM_ONLY, REQUEST_NAMED_SERVICE_USER_PRINCIPAL],
             },
             create: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],

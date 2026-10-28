@@ -1,11 +1,18 @@
 use chrono::Utc;
-use valence::{Model, Valence};
+use lepton::generated::{ServiceUserAccount, ServiceUserAccountStatus};
+use lepton_identity::service_users::{ServiceUserHandle, ServiceUserId};
+use valence::{Model, RecordId, Valence};
 
-use crate::generated::{PermissionHistory, PermissionRequest, PermissionRequestStatus};
+use crate::generated::{
+    PermissionHistory, PermissionRequest, PermissionRequestStatus, PermissionServiceUserPrincipal,
+};
+use crate::service_users::access::{service_user_decision, service_user_in_group};
+use crate::service_users::SERVICE_USER_PRINCIPAL_TABLE;
 use crate::super_user::actor_is_super_user;
 use crate::types::{
     HistoryDiffItemDto, HistoryEntryDto, PermissionRequestCreateInput, PermissionRequestDecision,
     PermissionRequestDecisionInput, PermissionRequestRowDto, PermissionRequestTargetKind,
+    PrincipalKind, PrincipalRefDto,
 };
 
 use super::access::{
@@ -17,7 +24,10 @@ use super::helpers::{
     get_group_raw, get_permission_raw, get_request_raw, get_user_by_actor_id, group_has_user,
     map_request_status, record_pk_id, require_model_id, require_user_id, user_id_candidates,
 };
-use super::permissions::grant_permission_to_user;
+use super::permissions::{grant_permission_to_service_user, grant_permission_to_user};
+use super::service_user_members::{
+    add_group_member_service_user_via_request, ensure_service_user_principal,
+};
 
 /// Matches Valence `MaxLength(2000)` on `permission_request.reason`.
 pub const MAX_REQUEST_REASON_CHARS: usize = 2000;
@@ -50,6 +60,11 @@ pub async fn request_row_from_model(
         .and_then(|t| valence::extract_id_from_record(t).ok());
     let can_review = actor_can_review_target(target, v).await?;
 
+    let on_behalf_of = match request.on_behalf_of().as_ref() {
+        Some(principal) => on_behalf_of_ref(principal, v).await?,
+        None => None,
+    };
+
     Ok(PermissionRequestRowDto {
         id: record_pk_id(request.id()),
         target_kind,
@@ -62,7 +77,109 @@ pub async fn request_row_from_model(
         created_at: request.created_at().to_rfc3339(),
         updated_at: request.updated_at().to_rfc3339(),
         can_review,
+        on_behalf_of,
     })
+}
+
+/// Build the display reference for a request's `on_behalf_of` service user: its handle as the
+/// label. Control-plane raw reads, so the request's named service user resolves for the target's
+/// maintainer deciding it, not only for the owner who filed it.
+async fn on_behalf_of_ref(
+    principal: &RecordId,
+    v: &Valence,
+) -> anyhow::Result<Option<PrincipalRefDto>> {
+    let Some(row) =
+        crate::actor_can_raw::raw_get_json(SERVICE_USER_PRINCIPAL_TABLE, principal.id(), v).await?
+    else {
+        return Ok(None);
+    };
+    let principal: PermissionServiceUserPrincipal = serde_json::from_value(row)?;
+    let service_user_id =
+        valence::extract_id_from_record(principal.service_user()).unwrap_or_default();
+    if service_user_id.is_empty() {
+        return Ok(None);
+    }
+    let Some(account_row) =
+        crate::actor_can_raw::raw_get_json("service_user_account", &service_user_id, v).await?
+    else {
+        return Ok(None);
+    };
+    let account: ServiceUserAccount = serde_json::from_value(account_row)?;
+    Ok(Some(PrincipalRefDto {
+        kind: PrincipalKind::ServiceUser,
+        id: service_user_id,
+        label: account.handle().clone(),
+        owner_label: None,
+    }))
+}
+
+/// Resolve a `permission_request.on_behalf_of` principal record to the service user it names.
+fn service_user_from_on_behalf_of(principal: &RecordId) -> anyhow::Result<ServiceUserId> {
+    ServiceUserId::parse(principal.id()).map_err(|_| {
+        anyhow::anyhow!(
+            "request on_behalf_of names an invalid service user principal: {}",
+            principal.id()
+        )
+    })
+}
+
+/// Resolve an `on_behalf_of` input (a service user's handle or id) to its id. Raw reads only;
+/// the ownership gate is the typed load the caller runs next.
+async fn resolve_on_behalf_of_service_user(
+    raw: &str,
+    v: &Valence,
+) -> anyhow::Result<ServiceUserId> {
+    let trimmed = raw.trim();
+    if let Ok(id) = ServiceUserId::parse(trimmed) {
+        return Ok(id);
+    }
+    let handle = ServiceUserHandle::normalize(trimmed).map_err(|_| {
+        super::GaugeServiceError::validation("That service user handle or id is not valid")
+    })?;
+    let backend = v
+        .backend_for_table("service_user_account")
+        .map_err(|e| anyhow::anyhow!("resolve service_user_account backend: {e}"))?;
+    let rows = backend
+        .execute_compiled_query(&valence::__internal::CompiledQuery {
+            query_string: "SELECT * FROM service_user_account WHERE handle_key = $key".to_string(),
+            params: vec![("key".to_string(), serde_json::json!(handle.key()))],
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("query service user by handle: {e}"))?;
+    let row = rows
+        .into_iter()
+        .next()
+        .ok_or_else(|| super::GaugeServiceError::validation("No service user with that handle"))?;
+    let account: ServiceUserAccount = serde_json::from_value(row)?;
+    let id = account
+        .id()
+        .and_then(|r| valence::extract_id_from_record(r).ok())
+        .unwrap_or_default();
+    ServiceUserId::parse(&id)
+        .map_err(|_| anyhow::anyhow!("service user row has an invalid id: {id}"))
+}
+
+/// Resolve an `on_behalf_of` input and confirm the actor may request for it: the typed load
+/// succeeds only for the owner or a manage-any holder, and the service user must be active.
+async fn resolve_owned_active_service_user(
+    raw: &str,
+    v: &Valence,
+) -> anyhow::Result<ServiceUserId> {
+    let service_user = resolve_on_behalf_of_service_user(raw, v).await?;
+    let account = ServiceUserAccount::get(service_user.as_str(), v, valence::use_!(r"When a user **files an access request on behalf of a service user**, we **load that service user** to confirm they own it (or may manage every service user) and that it is active. Only the owner's own check uses it; nothing about the service user is shown."))
+        .await?
+        .ok_or_else(|| {
+            super::GaugeServiceError::validation(
+                "You can only request access for a service user you own",
+            )
+        })?;
+    if account.status() != &ServiceUserAccountStatus::Active {
+        return Err(super::GaugeServiceError::validation(
+            "That service user is paused; resume it before requesting access for it",
+        )
+        .into());
+    }
+    Ok(service_user)
 }
 
 /// Submit a new access request for a permission or group; fails if the current
@@ -76,12 +193,30 @@ pub async fn create_permission_request(
     let system = v;
     let target_record = request_target_record(&input.target_kind, &input.target_id);
 
+    // When the request is for a service user, the actor must own that active service user (or
+    // hold manage-any); the "already has / already a member" checks then run against the service
+    // user rather than the actor, and the request is stored naming its principal.
+    let on_behalf_of = match input.on_behalf_of.as_deref().map(str::trim) {
+        Some(raw) if !raw.is_empty() => Some(resolve_owned_active_service_user(raw, v).await?),
+        _ => None,
+    };
+
     match input.target_kind {
         PermissionRequestTargetKind::Permission => {
             let permission = get_permission_raw(&input.target_id, system)
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("Permission not found: {}", input.target_id))?;
-            if permission_allows_user(&permission, &actor_candidates, system).await? {
+            if let Some(service_user) = &on_behalf_of {
+                if service_user_decision(v, service_user, permission.name())
+                    .await?
+                    .allowed()
+                {
+                    return Err(super::GaugeServiceError::validation(
+                        "That service user already has this permission",
+                    )
+                    .into());
+                }
+            } else if permission_allows_user(&permission, &actor_candidates, system).await? {
                 anyhow::bail!("You already have this permission");
             }
         }
@@ -91,7 +226,14 @@ pub async fn create_permission_request(
                 .ok_or_else(|| {
                     anyhow::anyhow!("Permission group not found: {}", input.target_id)
                 })?;
-            if group_has_user(&group, &actor_candidates, system).await? {
+            if let Some(service_user) = &on_behalf_of {
+                if service_user_in_group(v, &input.target_id, service_user).await? {
+                    return Err(super::GaugeServiceError::validation(
+                        "That service user is already a member of this group",
+                    )
+                    .into());
+                }
+            } else if group_has_user(&group, &actor_candidates, system).await? {
                 return Err(super::GaugeServiceError::validation(
                     "You are already a member of this group",
                 )
@@ -114,6 +256,15 @@ pub async fn create_permission_request(
         ))
         .into());
     }
+    let on_behalf_of_record = match &on_behalf_of {
+        Some(service_user) => {
+            // The owner can see the service user here, so record its principal now; the
+            // approving maintainer then adds it without needing to see the service user.
+            let principal = ensure_service_user_principal(service_user, system).await?;
+            Some(require_model_id(principal.id(), "on_behalf_of")?)
+        }
+        None => None,
+    };
     let request = PermissionRequest::new(
         require_model_id(requestor.id(), "requestor")?,
         None,
@@ -122,6 +273,7 @@ pub async fn create_permission_request(
         PermissionRequestStatus::Pending,
         now,
         now,
+        on_behalf_of_record,
     )?;
     let created = PermissionRequest::create(request, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Request** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     request_row_from_model(&created, v).await
@@ -250,13 +402,24 @@ pub async fn decide_permission_request(
             valence::extract_id_from_record(request.requestor()).unwrap_or_default();
         let target = request.target();
         let target_id = valence::extract_id_from_record(target).unwrap_or_default();
+        let on_behalf_of = request
+            .on_behalf_of()
+            .as_ref()
+            .map(|principal| service_user_from_on_behalf_of(principal))
+            .transpose()?;
         match request_target_kind_from_record(target) {
-            Some(PermissionRequestTargetKind::Permission) => {
-                grant_permission_to_user(&target_id, &requestor_user_id, v).await?;
-            }
-            Some(PermissionRequestTargetKind::Group) => {
-                add_group_member_user(&target_id, &requestor_user_id, v).await?;
-            }
+            Some(PermissionRequestTargetKind::Permission) => match &on_behalf_of {
+                Some(service_user) => {
+                    grant_permission_to_service_user(&target_id, service_user, v).await?;
+                }
+                None => grant_permission_to_user(&target_id, &requestor_user_id, v).await?,
+            },
+            Some(PermissionRequestTargetKind::Group) => match &on_behalf_of {
+                Some(service_user) => {
+                    add_group_member_service_user_via_request(&target_id, service_user, v).await?;
+                }
+                None => add_group_member_user(&target_id, &requestor_user_id, v).await?,
+            },
             None => anyhow::bail!("Unsupported request target type"),
         }
     }

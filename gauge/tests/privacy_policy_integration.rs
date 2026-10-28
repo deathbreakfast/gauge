@@ -489,6 +489,7 @@ async fn permission_request_update_maintainer_only_tm_sec_05() -> anyhow::Result
             target_kind: gauge::types::PermissionRequestTargetKind::Permission,
             target_id: "perm_req_policy_1".to_string(),
             reason: "need access".to_string(),
+            on_behalf_of: None,
         },
         &outsider_v,
     )

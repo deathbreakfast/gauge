@@ -60,7 +60,12 @@ pub async fn service_user_decision(
     }
     let principal_id = service_user_principal_id(service_user);
     for permission in permissions_named_raw(permission_name, v).await? {
-        for principal in permission.get_allowed_principals_record_ids(v, valence::use_!(r"When a **service user** calls an API that needs a **Gauge permission**, we **follow the permission's allowed-principal edges** to find the groups that hold it. Used only to allow or deny the service user's request; nothing is shown.")).await? {
+        for principal in permission.get_allowed_principals_record_ids(v, valence::use_!(r"When a **service user** calls an API that needs a **Gauge permission**, we **follow the permission's allowed-principal edges** to find the groups that hold it, or a direct grant to the service user. Used only to allow or deny the service user's request; nothing is shown.")).await? {
+            // A grant made straight to the service user's principal (how an approved permission
+            // request on its behalf lands), the same shape as a direct user grant.
+            if principal.table() == SERVICE_USER_PRINCIPAL_TABLE && principal.id() == principal_id {
+                return Ok(ServiceUserDecision::Member);
+            }
             let Some(group) = group_behind_principal(&principal, v).await? else {
                 continue;
             };
@@ -70,6 +75,26 @@ pub async fn service_user_decision(
         }
     }
     Ok(ServiceUserDecision::NotMember)
+}
+
+/// `true` when `service_user` is already a member of `group_id` (directly, through a nested
+/// group, or through a group that owns it — the same holder semantics as
+/// [`service_user_decision`]). Raw reads only, so it is safe to call before a write.
+///
+/// # Errors
+///
+/// Backend read or decode failures.
+pub async fn service_user_in_group(
+    v: &Valence,
+    group_id: &str,
+    service_user: &ServiceUserId,
+) -> anyhow::Result<bool> {
+    let Some(row) = raw_get_json("permission_group", group_id, v).await? else {
+        return Ok(false);
+    };
+    let group: PermissionGroup = serde_json::from_value(row)?;
+    let principal_id = service_user_principal_id(service_user);
+    group_has_service_user_raw(&group, &principal_id, v).await
 }
 
 /// Log a decision at the service-user check boundary.

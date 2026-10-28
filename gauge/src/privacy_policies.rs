@@ -113,6 +113,9 @@ pub const DOMAIN_OWNER_RECURSIVE: DomainOwnerRecursive = DomainOwnerRecursive;
 pub const REQUEST_TARGET_MAINTAINER: RequestTargetMaintainer = RequestTargetMaintainer;
 /// Shared [`SuperUserGroupMember`] instance for use in schema `privacy_policies` declarations.
 pub const SUPER_USER_GROUP_MEMBER: SuperUserGroupMember = SuperUserGroupMember;
+/// Shared [`RequestNamedServiceUserPrincipal`] instance for the service-user principal read policy.
+pub const REQUEST_NAMED_SERVICE_USER_PRINCIPAL: RequestNamedServiceUserPrincipal =
+    RequestNamedServiceUserPrincipal;
 
 /// Allow permission-request **update** (decide) when the actor maintains the request target.
 #[derive(Debug, Clone)]
@@ -149,64 +152,73 @@ impl PolicyEvaluator for RequestTargetMaintainer {
         let Some(target) = record.get("target") else {
             return Ok(false);
         };
-        let Some((table, id)) = target_table_and_id(target) else {
-            return Ok(false);
-        };
-        match table.as_str() {
-            "permission" => {
-                let Some(row) = raw_get_json("permission", &id, v).await.map_err(|e| {
-                    Error::Privacy(format!(
-                        "Policy request target permission lookup failed: {e}"
-                    ))
-                })?
-                else {
-                    return Ok(false);
-                };
-                let permission: Permission = serde_json::from_value(row).map_err(|e| {
-                    Error::Privacy(format!("Policy request target permission decode: {e}"))
-                })?;
-                let owners_group_id =
-                    valence::extract_id_from_record(permission.owners_group()).unwrap_or_default();
-                if owners_group_id.is_empty() {
-                    return Ok(false);
-                }
-                let Some(row) = raw_get_json("permission_group", &owners_group_id, v)
-                    .await
-                    .map_err(|e| {
-                        Error::Privacy(format!("Policy request target owners_group failed: {e}"))
-                    })?
-                else {
-                    return Ok(false);
-                };
-                let owners_group: PermissionGroup = serde_json::from_value(row).map_err(|e| {
-                    Error::Privacy(format!("Policy request target owners_group decode: {e}"))
-                })?;
-                group_has_recursive_owner(&owners_group, &user_ids, v)
-                    .await
-                    .map_err(|e| Error::Privacy(format!("Policy request target recursion: {e}")))
-            }
-            "permission_group" => {
-                let Some(row) = raw_get_json("permission_group", &id, v)
-                    .await
-                    .map_err(|e| {
-                        Error::Privacy(format!("Policy request target group lookup failed: {e}"))
-                    })?
-                else {
-                    return Ok(false);
-                };
-                let group: PermissionGroup = serde_json::from_value(row).map_err(|e| {
-                    Error::Privacy(format!("Policy request target group decode: {e}"))
-                })?;
-                group_has_recursive_owner(&group, &user_ids, v)
-                    .await
-                    .map_err(|e| Error::Privacy(format!("Policy request target recursion: {e}")))
-            }
-            _ => Ok(false),
-        }
+        actor_maintains_target(target, &user_ids, v).await
     }
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+/// `true` when `user_ids` recursively own the permission or group named by `target`
+/// (a request's `target` record value). Raw reads only; no System elevate.
+async fn actor_maintains_target(
+    target: &serde_json::Value,
+    user_ids: &[String],
+    v: &Valence,
+) -> valence::Result<bool> {
+    let Some((table, id)) = target_table_and_id(target) else {
+        return Ok(false);
+    };
+    match table.as_str() {
+        "permission" => {
+            let Some(row) = raw_get_json("permission", &id, v).await.map_err(|e| {
+                Error::Privacy(format!(
+                    "Policy request target permission lookup failed: {e}"
+                ))
+            })?
+            else {
+                return Ok(false);
+            };
+            let permission: Permission = serde_json::from_value(row).map_err(|e| {
+                Error::Privacy(format!("Policy request target permission decode: {e}"))
+            })?;
+            let owners_group_id =
+                valence::extract_id_from_record(permission.owners_group()).unwrap_or_default();
+            if owners_group_id.is_empty() {
+                return Ok(false);
+            }
+            let Some(row) = raw_get_json("permission_group", &owners_group_id, v)
+                .await
+                .map_err(|e| {
+                    Error::Privacy(format!("Policy request target owners_group failed: {e}"))
+                })?
+            else {
+                return Ok(false);
+            };
+            let owners_group: PermissionGroup = serde_json::from_value(row).map_err(|e| {
+                Error::Privacy(format!("Policy request target owners_group decode: {e}"))
+            })?;
+            group_has_recursive_owner(&owners_group, user_ids, v)
+                .await
+                .map_err(|e| Error::Privacy(format!("Policy request target recursion: {e}")))
+        }
+        "permission_group" => {
+            let Some(row) = raw_get_json("permission_group", &id, v)
+                .await
+                .map_err(|e| {
+                    Error::Privacy(format!("Policy request target group lookup failed: {e}"))
+                })?
+            else {
+                return Ok(false);
+            };
+            let group: PermissionGroup = serde_json::from_value(row)
+                .map_err(|e| Error::Privacy(format!("Policy request target group decode: {e}")))?;
+            group_has_recursive_owner(&group, user_ids, v)
+                .await
+                .map_err(|e| Error::Privacy(format!("Policy request target recursion: {e}")))
+        }
+        _ => Ok(false),
     }
 }
 
@@ -261,6 +273,97 @@ impl PolicyEvaluator for SuperUserGroupMember {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+/// Allow a request target's maintainer to **read** the service user a request is for.
+///
+/// Allows read of a `permission_service_user_principal` when a `permission_request` whose
+/// `on_behalf_of` points at this principal has a target the actor maintains. The request carries
+/// the owner's consent, so the read needs neither the lepton service-user visibility nor
+/// `Actor::System`.
+#[derive(Debug, Clone)]
+pub struct RequestNamedServiceUserPrincipal;
+
+#[async_trait]
+impl PolicyEvaluator for RequestNamedServiceUserPrincipal {
+    fn name(&self) -> &'static str {
+        "perm::REQUEST_NAMED_SERVICE_USER_PRINCIPAL"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Allow principal read to the maintainer of a target a request names it for")
+    }
+
+    async fn evaluate(
+        &self,
+        op: PrivacyOperation,
+        record: &serde_json::Value,
+        actor: &dyn ActorContext,
+        v: &Valence,
+    ) -> valence::Result<bool> {
+        let actor = actor_from_context(actor)?;
+        if actor.is_system() {
+            return Ok(true);
+        }
+        if !matches!(op, PrivacyOperation::Read) {
+            return Ok(false);
+        }
+        let user_ids = actor_candidates(&actor);
+        if user_ids.is_empty() {
+            return Ok(false);
+        }
+        let Some(principal_id) = record_id(record) else {
+            return Ok(false);
+        };
+        let targets = request_targets_naming_principal(&principal_id, v)
+            .await
+            .map_err(|e| {
+                Error::Privacy(format!("Policy principal-by-request lookup failed: {e}"))
+            })?;
+        for target in &targets {
+            if actor_maintains_target(target, &user_ids, v).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// The `target` record values of every request whose `on_behalf_of` names `principal_id`.
+async fn request_targets_naming_principal(
+    principal_id: &str,
+    v: &Valence,
+) -> anyhow::Result<Vec<serde_json::Value>> {
+    let backend = v
+        .backend_for_table("permission_request")
+        .map_err(|e| anyhow::anyhow!("resolve permission_request backend: {e}"))?;
+    let rows = backend
+        .execute_compiled_query(&valence::__internal::CompiledQuery {
+            query_string: "SELECT * FROM permission_request".to_string(),
+            params: vec![],
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("scan permission_request (raw): {e}"))?;
+    let want = bare_record_id(principal_id);
+    Ok(rows
+        .into_iter()
+        .filter(|row| {
+            row.get("on_behalf_of")
+                .and_then(target_table_and_id)
+                .is_some_and(|(_, id)| bare_record_id(&id) == want)
+        })
+        .filter_map(|mut row| row.get_mut("target").map(serde_json::Value::take))
+        .collect())
+}
+
+/// The trailing id segment, so `permission_service_user_principal:svc:<uuid>`, `svc:<uuid>`,
+/// and `<uuid>` all compare equal.
+fn bare_record_id(id: &str) -> String {
+    id.rsplit(':').next().unwrap_or(id).to_string()
 }
 
 fn actor_from_context(actor: &dyn ActorContext) -> valence::Result<Actor> {

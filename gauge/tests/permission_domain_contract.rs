@@ -390,6 +390,7 @@ async fn permission_request_approve_grants_access_happy_path() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id.clone(),
             reason: "Need deploy access for release".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -445,6 +446,7 @@ async fn permission_workflow_domain_grant_request_review_happy_path() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id.clone(),
             reason: "Ship window access".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -496,6 +498,7 @@ async fn outsider_cannot_decide_permission_request_sad() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id.clone(),
             reason: "Please approve".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -920,6 +923,7 @@ async fn create_permission_request_empty_reason_rejected_sad() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id,
             reason: "   ".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -941,6 +945,7 @@ async fn create_permission_request_already_has_permission_rejected_sad() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id,
             reason: "Already have it".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -958,6 +963,7 @@ async fn get_permission_request_detail_unauthorized_viewer_sad() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id,
             reason: "Please".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -1304,6 +1310,7 @@ async fn authenticated_user_cannot_read_foreign_request_via_service_sad() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id,
             reason: "Please".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -1485,6 +1492,7 @@ async fn group_request_approve_adds_member_happy_path() {
             target_kind: PermissionRequestTargetKind::Group,
             target_id: target_id.clone(),
             reason: "Need to join the team group".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -1536,6 +1544,7 @@ async fn group_request_deny_does_not_add_member_sad() {
             target_kind: PermissionRequestTargetKind::Group,
             target_id: target_id.clone(),
             reason: "Please add me to the group".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
@@ -1576,6 +1585,7 @@ async fn decide_non_pending_request_rejected_sad() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id.clone(),
             reason: "Need access for re-decide test".to_string(),
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
