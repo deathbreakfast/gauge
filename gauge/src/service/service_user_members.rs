@@ -13,8 +13,8 @@ use crate::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID};
 use crate::types::HistoryDiffItemDto;
 
 use super::helpers::{
-    get_group_raw, group_has_owner_user, persist_history_entry, require_model_id, require_user_id,
-    user_id_candidates,
+    get_group_raw, group_has_member_principal, group_has_owner_user, persist_history_entry,
+    require_model_id, require_user_id, user_id_candidates,
 };
 use super::membership::group_for_member_edit;
 use super::GaugeServiceError;
@@ -115,8 +115,12 @@ pub async fn add_group_member_service_user(
     let principal = get_service_user_principal_raw(service_user, v)
         .await?
         .ok_or_else(|| GaugeServiceError::invariant("service user principal missing after save"))?;
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    if group_has_member_principal(&group, &principal_id, v).await? {
+        return Ok(());
+    }
     group
-        .relate_to_member_record(&require_model_id(principal.id(), "principal")?, v, valence::use_!(r"When an operator **adds a service user to a permission group**, we **write the member edge** so the service user holds the group's permissions while it is active. Operators see the service user in the group's member list."))
+        .relate_to_member_record(&principal_id, v, valence::use_!(r"When an operator **adds a service user to a permission group**, we **write the member edge** so the service user holds the group's permissions while it is active. Operators see the service user in the group's member list."))
         .await?;
     persist_history_entry(
         v,
@@ -154,8 +158,12 @@ pub async fn remove_group_member_service_user(
     let Some(principal) = get_service_user_principal_raw(service_user, v).await? else {
         return Ok(());
     };
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    if !group_has_member_principal(&group, &principal_id, v).await? {
+        return Ok(());
+    }
     group
-        .unrelate_from_member_record(&require_model_id(principal.id(), "principal")?, v, valence::use_!(r"When an operator **removes a service user from a permission group**, we **delete the member edge** so the service user stops holding the group's permissions. Operators see the updated member list."))
+        .unrelate_from_member_record(&principal_id, v, valence::use_!(r"When an operator **removes a service user from a permission group**, we **delete the member edge** so the service user stops holding the group's permissions. Operators see the updated member list."))
         .await?;
     persist_history_entry(
         v,
