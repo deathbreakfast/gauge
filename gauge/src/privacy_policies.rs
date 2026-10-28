@@ -5,7 +5,7 @@ use std::any::Any;
 use valence::{Actor, ActorContext, Error, PolicyEvaluator, PrivacyOperation, Valence};
 
 use crate::generated::{
-    Permission, PermissionDomain, PermissionGroup, PermissionGroupPrincipal,
+    Permission, PermissionDomain, PermissionGroup, PermissionGroupPrincipal, PermissionRequest,
     PermissionUserPrincipal,
 };
 use crate::super_user::SUPER_USER_GROUP_ID;
@@ -281,6 +281,10 @@ impl PolicyEvaluator for SuperUserGroupMember {
 /// `on_behalf_of` points at this principal has a target the actor maintains. The request carries
 /// the owner's consent, so the read needs neither the lepton service-user visibility nor
 /// `Actor::System`.
+///
+/// Defence in depth: the principal read policy also allows `AUTHENTICATED`, so today this rule
+/// never changes an outcome. It keeps the maintainer's read working if that rule is tightened.
+/// Approval itself relies on the approve path skipping the lepton visibility check, not on this.
 #[derive(Debug, Clone)]
 pub struct RequestNamedServiceUserPrincipal;
 
@@ -334,36 +338,30 @@ impl PolicyEvaluator for RequestNamedServiceUserPrincipal {
 }
 
 /// The `target` record values of every request whose `on_behalf_of` names `principal_id`.
+///
+/// Filters on `on_behalf_of` in the query (the typed builder emits backend-correct record
+/// equality), so a principal read never scans the whole request table. The typed query applies
+/// `permission_request`'s read policies, none of which read principal rows, so it can't recurse
+/// back into this rule.
 async fn request_targets_naming_principal(
     principal_id: &str,
     v: &Valence,
 ) -> anyhow::Result<Vec<serde_json::Value>> {
-    let backend = v
-        .backend_for_table("permission_request")
-        .map_err(|e| anyhow::anyhow!("resolve permission_request backend: {e}"))?;
-    let rows = backend
-        .execute_compiled_query(&valence::__internal::CompiledQuery {
-            query_string: "SELECT * FROM permission_request".to_string(),
-            params: vec![],
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("scan permission_request (raw): {e}"))?;
-    let want = bare_record_id(principal_id);
+    let bare = principal_id.rsplit(':').next().unwrap_or(principal_id);
+    let principal = valence::RecordId::new(
+        "permission_service_user_principal",
+        format!(
+            "{}{bare}",
+            lepton_identity::service_users::SERVICE_USER_PREFIX
+        ),
+    );
+    let rows = PermissionRequest::query(v, valence::use_!(r"When **Gauge** decides whether a maintainer may **read a service user's principal through an access request**, we **look up the requests filed on behalf of that service user** and check who maintains each one's target. Used only to allow or deny the read; nothing is shown."))
+        .where_on_behalf_of(valence::RecordPredicate::Equals(principal))
+        .await?;
     Ok(rows
-        .into_iter()
-        .filter(|row| {
-            row.get("on_behalf_of")
-                .and_then(target_table_and_id)
-                .is_some_and(|(_, id)| bare_record_id(&id) == want)
-        })
-        .filter_map(|mut row| row.get_mut("target").map(serde_json::Value::take))
+        .iter()
+        .map(|row| serde_json::json!(format!("{}:{}", row.target().table(), row.target().id())))
         .collect())
-}
-
-/// The trailing id segment, so `permission_service_user_principal:svc:<uuid>`, `svc:<uuid>`,
-/// and `<uuid>` all compare equal.
-fn bare_record_id(id: &str) -> String {
-    id.rsplit(':').next().unwrap_or(id).to_string()
 }
 
 fn actor_from_context(actor: &dyn ActorContext) -> valence::Result<Actor> {

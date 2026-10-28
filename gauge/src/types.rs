@@ -242,9 +242,9 @@ pub struct PermissionRequestRowDto {
     pub updated_at: String,
     /// Whether the current actor may review (approve/deny) this request.
     pub can_review: bool,
-    /// The service user the request is for, when filed on behalf of one: its handle
-    /// ([`PrincipalRefDto::label`]) and owner ([`PrincipalRefDto::owner_label`]). `None` for a
-    /// plain user request.
+    /// The service user the request is for, when filed on behalf of one, with its handle in
+    /// [`PrincipalRefDto::label`]. `owner_label` is not filled in here. `None` for a plain user
+    /// request.
     #[serde(default)]
     pub on_behalf_of: Option<PrincipalRefDto>,
 }

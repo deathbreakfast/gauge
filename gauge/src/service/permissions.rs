@@ -180,6 +180,9 @@ pub async fn grant_permission_to_user(
 /// service user is active. Used by the approve path for a permission request filed on behalf of
 /// a service user. The caller stays the session actor — never `Actor::System`.
 ///
+/// Not re-exported: unlike [`super::add_group_member_service_user`] it doesn't check that the
+/// caller can see the service user, because the approved request carries the owner's consent.
+///
 /// # Errors
 ///
 /// [`GaugeServiceError`](super::GaugeServiceError): `NotAuthorized` when the caller can't edit

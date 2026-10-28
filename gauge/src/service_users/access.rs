@@ -113,6 +113,18 @@ pub fn log_decision(permission_name: &str, decision: &anyhow::Result<ServiceUser
     }
 }
 
+/// The service user row exists, is `active`, and is not waiting on deletion. Raw reads only.
+///
+/// # Errors
+///
+/// Backend read or decode failures.
+pub async fn service_user_is_active(
+    v: &Valence,
+    service_user: &ServiceUserId,
+) -> anyhow::Result<bool> {
+    service_user_is_active_raw(v, service_user).await
+}
+
 /// The service user row exists, is `active`, and is not waiting on deletion.
 async fn service_user_is_active_raw(
     v: &Valence,

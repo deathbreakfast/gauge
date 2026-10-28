@@ -52,9 +52,8 @@ pub use groups::{
 };
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
-    grant_permission_to_group, grant_permission_to_service_user, grant_permission_to_user,
-    list_groups, list_permissions, revoke_permission_from_group, revoke_permission_from_user,
-    update_permission,
+    grant_permission_to_group, grant_permission_to_user, list_groups, list_permissions,
+    revoke_permission_from_group, revoke_permission_from_user, update_permission,
 };
 pub use requests::{
     actor_can_view_history_subject, create_permission_request, decide_permission_request,

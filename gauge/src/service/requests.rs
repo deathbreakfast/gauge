@@ -6,7 +6,9 @@ use valence::{Model, RecordId, Valence};
 use crate::generated::{
     PermissionHistory, PermissionRequest, PermissionRequestStatus, PermissionServiceUserPrincipal,
 };
-use crate::service_users::access::{service_user_decision, service_user_in_group};
+use crate::service_users::access::{
+    service_user_decision, service_user_in_group, service_user_is_active,
+};
 use crate::service_users::SERVICE_USER_PRINCIPAL_TABLE;
 use crate::super_user::actor_is_super_user;
 use crate::types::{
@@ -31,6 +33,9 @@ use super::service_user_members::{
 
 /// Matches Valence `MaxLength(2000)` on `permission_request.reason`.
 pub const MAX_REQUEST_REASON_CHARS: usize = 2000;
+
+/// Refusal for an `on_behalf_of` the actor doesn't own, or that doesn't exist.
+const NOT_OWNED_SERVICE_USER: &str = "You can only request access for a service user you own";
 
 /// Cap for [`list_history`] rows loaded from Valence and returned after ownership filtering.
 pub const MAX_HISTORY_LIST_ROWS: usize = 500;
@@ -113,6 +118,21 @@ async fn on_behalf_of_ref(
     }))
 }
 
+/// `true` when the service user a request names still has its principal row and is active (not
+/// suspended or being deleted). Raw control-plane reads, as in the service-user access check.
+async fn service_user_still_grantable(
+    service_user: &ServiceUserId,
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    let principal = crate::actor_can_raw::raw_get_json(
+        SERVICE_USER_PRINCIPAL_TABLE,
+        &crate::service_users::service_user_principal_id(service_user),
+        v,
+    )
+    .await?;
+    Ok(principal.is_some() && service_user_is_active(v, service_user).await?)
+}
+
 /// Resolve a `permission_request.on_behalf_of` principal record to the service user it names.
 fn service_user_from_on_behalf_of(principal: &RecordId) -> anyhow::Result<ServiceUserId> {
     ServiceUserId::parse(principal.id()).map_err(|_| {
@@ -149,7 +169,9 @@ async fn resolve_on_behalf_of_service_user(
     let row = rows
         .into_iter()
         .next()
-        .ok_or_else(|| super::GaugeServiceError::validation("No service user with that handle"))?;
+        // Same message as a service user the actor doesn't own, so the reply never reveals which
+        // handles exist.
+        .ok_or_else(|| super::GaugeServiceError::validation(NOT_OWNED_SERVICE_USER))?;
     let account: ServiceUserAccount = serde_json::from_value(row)?;
     let id = account
         .id()
@@ -169,9 +191,7 @@ async fn resolve_owned_active_service_user(
     let account = ServiceUserAccount::get(service_user.as_str(), v, valence::use_!(r"When a user **files an access request on behalf of a service user**, we **load that service user** to confirm they own it (or may manage every service user) and that it is active. Only the owner's own check uses it; nothing about the service user is shown."))
         .await?
         .ok_or_else(|| {
-            super::GaugeServiceError::validation(
-                "You can only request access for a service user you own",
-            )
+            super::GaugeServiceError::validation(NOT_OWNED_SERVICE_USER)
         })?;
     if account.status() != &ServiceUserAccountStatus::Active {
         return Err(super::GaugeServiceError::validation(
@@ -383,6 +403,23 @@ pub async fn decide_permission_request(
     let approver = get_user_by_actor_id(&actor_user_id, system)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Actor user not found: {actor_user_id}"))?;
+    let on_behalf_of = request
+        .on_behalf_of()
+        .as_ref()
+        .map(|principal| service_user_from_on_behalf_of(principal))
+        .transpose()?;
+    if let (PermissionRequestDecision::Approve, Some(service_user)) =
+        (&input.decision, &on_behalf_of)
+    {
+        // Deleting a service user cascades to its principal but leaves this request's
+        // `on_behalf_of` pointing at it; refuse before the grant would recreate the principal.
+        if !service_user_still_grantable(service_user, v).await? {
+            return Err(super::GaugeServiceError::validation(
+                "That service user no longer exists or is paused, so access can't be granted",
+            )
+            .into());
+        }
+    }
     let new_status = match input.decision {
         PermissionRequestDecision::Approve => PermissionRequestStatus::Approved,
         PermissionRequestDecision::Deny => PermissionRequestStatus::Denied,
@@ -402,11 +439,6 @@ pub async fn decide_permission_request(
             valence::extract_id_from_record(request.requestor()).unwrap_or_default();
         let target = request.target();
         let target_id = valence::extract_id_from_record(target).unwrap_or_default();
-        let on_behalf_of = request
-            .on_behalf_of()
-            .as_ref()
-            .map(|principal| service_user_from_on_behalf_of(principal))
-            .transpose()?;
         match request_target_kind_from_record(target) {
             Some(PermissionRequestTargetKind::Permission) => match &on_behalf_of {
                 Some(service_user) => {
