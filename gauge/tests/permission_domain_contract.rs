@@ -906,6 +906,7 @@ async fn create_permission_request_overlong_reason_rejected_sad() {
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: world.permission_id,
             reason,
+            on_behalf_of: None,
         },
         &world.requestor_ctx,
     )
