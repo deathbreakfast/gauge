@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// Kind of principal a permission/group can be assigned to.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PrincipalKind {
     /// A single user.
     User,

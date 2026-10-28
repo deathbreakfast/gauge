@@ -59,6 +59,34 @@ pub fn require_model_id(
     })
 }
 
+/// Whether `principal` is already a member of `group`. Used to skip a redundant edge write
+/// (and the history row that follows it) when an add changes nothing.
+pub async fn group_has_member_principal(
+    group: &PermissionGroup,
+    principal: &RecordId,
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    Ok(group
+        .get_members_record_ids(v, valence::use_!(r"When **Gauge** needs the **members of a permission group**, we **follow the member edges** so the product can show members on the group detail or decide who inherits grants. Editors see that list; access checks use it only to allow or deny."))
+        .await?
+        .iter()
+        .any(|m| m == principal))
+}
+
+/// Whether `principal` is already an owner of `group`. Used to skip a redundant edge write
+/// (and the history row that follows it) when an add changes nothing.
+pub async fn group_has_owner_principal(
+    group: &PermissionGroup,
+    principal: &RecordId,
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    Ok(group
+        .get_owners_record_ids(v, valence::use_!(r"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."))
+        .await?
+        .iter()
+        .any(|o| o == principal))
+}
+
 pub async fn require_raw_record(table: &str, id: &str, v: &Valence) -> anyhow::Result<()> {
     if id.is_empty() {
         anyhow::bail!("{table} id is required");

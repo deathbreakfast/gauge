@@ -20,11 +20,11 @@ valence_schema! {
             },
             create: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
-                allow: [AUTHENTICATED, SYSTEM_ONLY],
+                allow: [SYSTEM_ONLY, SERVICE_USER_PRINCIPAL_MANAGER],
             },
             update: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
-                allow: [AUTHENTICATED, SYSTEM_ONLY],
+                allow: [SYSTEM_ONLY, SERVICE_USER_PRINCIPAL_MANAGER],
             },
             delete: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],

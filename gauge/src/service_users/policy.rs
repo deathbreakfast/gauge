@@ -9,17 +9,21 @@ use valence::{Actor, ActorContext, Error, PolicyEvaluator, PrivacyOperation, Val
 use crate::actor_can_raw::raw_get_json;
 use crate::generated::PermissionServiceUserPrincipal;
 
-/// Allows **delete** of a `permission_service_user_principal` row by the service user's owner, or
-/// by a user the installed Lepton service user gate lets manage every service user.
+/// Allows **create, update, or delete** of a `permission_service_user_principal` row by the
+/// service user's owner, or by a user the installed Lepton service user gate lets manage every
+/// service user.
 ///
-/// Deleting a service user cascades to its principal row (and from there to its group
-/// memberships), and that delete runs as whoever deleted the service user. Without this
-/// rule only System and super users could delete a service user that belongs to a group.
-/// Reads are raw, and the caller's actor is never changed.
+/// This is the same check `add_group_member_service_user` runs before it writes the row: an
+/// operator may only wrap a service user whose principal they could manage. Gating create and
+/// update on it (not a blanket `AUTHENTICATED`) stops a caller from forging a principal row for
+/// a service user they can't see. Deleting a service user cascades to its principal row (and
+/// from there to its group memberships), and that delete runs as whoever deleted the service
+/// user; without this rule only System and super users could delete a service user that belongs
+/// to a group. Reads are raw, and the caller's actor is never changed.
 #[derive(Debug, Clone, Copy)]
 pub struct ServiceUserPrincipalManager;
 
-/// Rule instance for `permission_service_user_principal` delete policies.
+/// Rule instance for `permission_service_user_principal` create/update/delete policies.
 pub const SERVICE_USER_PRINCIPAL_MANAGER: ServiceUserPrincipalManager = ServiceUserPrincipalManager;
 
 #[async_trait]
@@ -30,7 +34,7 @@ impl PolicyEvaluator for ServiceUserPrincipalManager {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Allow service user principal delete for the service user's owner or a manage-any user",
+            "Allow service user principal create/update/delete for the service user's owner or a manage-any user",
         )
     }
 
@@ -41,7 +45,10 @@ impl PolicyEvaluator for ServiceUserPrincipalManager {
         actor: &dyn ActorContext,
         v: &Valence,
     ) -> valence::Result<bool> {
-        if !matches!(op, PrivacyOperation::Delete) {
+        if !matches!(
+            op,
+            PrivacyOperation::Create | PrivacyOperation::Update | PrivacyOperation::Delete
+        ) {
             return Ok(false);
         }
         let actor: Actor = serde_json::from_value(actor.actor_json().clone())
@@ -69,9 +76,18 @@ impl PolicyEvaluator for ServiceUserPrincipalManager {
                 return Ok(true);
             }
         }
-        match installed_service_user_gate() {
-            Some(gate) => Ok(gate.may_manage_any_service_user(v).await.unwrap_or(false)),
-            None => Ok(false),
+        let Some(gate) = installed_service_user_gate() else {
+            return Ok(false);
+        };
+        match gate.may_manage_any_service_user(v).await {
+            Ok(allowed) => Ok(allowed),
+            Err(e) => {
+                log::warn!(
+                    target: "gauge.service_user_access",
+                    "manage-any service user check failed, denying: {e}"
+                );
+                Ok(false)
+            }
         }
     }
 
