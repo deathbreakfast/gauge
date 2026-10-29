@@ -8,7 +8,7 @@ valence_schema! {
     PermissionRequest {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_request",
-        version: "0.1.0",
+        version: "0.2.0",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Request from a user to gain access to a permission or permission group",
 
@@ -67,6 +67,12 @@ valence_schema! {
                 r#type: FieldType::DateTime,
                 required: true,
             },
+            // Set when the request is for a service user the requestor owns; holds the
+            // service user's Gauge principal (`svc:<id>`). Absent for a plain user request.
+            on_behalf_of: {
+                r#type: FieldType::Record("permission_service_user_principal"),
+                required: false,
+            },
         ],
 
         connections: [
@@ -91,6 +97,13 @@ valence_schema! {
                 on_delete: Restrict,
                 model: "crate::generated::Permission",
                 target_trait: "PermissionShared",
+            },
+            on_behalf_of: {
+                table: "permission_service_user_principal",
+                cardinality: HasOne,
+                required: false,
+                on_delete: Restrict,
+                model: "crate::generated::PermissionServiceUserPrincipal",
             },
         ],
 

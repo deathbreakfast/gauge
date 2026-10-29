@@ -112,7 +112,8 @@ pub async fn permission_allows_user(
                     }
                 }
             }
-            // Service users are only members; they never appear on an allow list.
+            // A user check never matches a service user's principal; service users are
+            // resolved by the service-user access check instead.
             Some(PrincipalKind::ServiceUser) | None => {}
         }
     }

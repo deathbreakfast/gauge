@@ -252,7 +252,8 @@ async fn permission_writes(v: &Valence, read_id: &str) -> Vec<&'static str> {
             PermissionRequestCreateInput {
                 target_kind: PermissionRequestTargetKind::Group,
                 target_id: READERS.into(),
-                reason: "please".into()
+                reason: "please".into(),
+                on_behalf_of: None,
             },
             v
         )

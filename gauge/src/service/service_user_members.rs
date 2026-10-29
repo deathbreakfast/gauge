@@ -7,7 +7,7 @@
 use lepton_identity::service_users::ServiceUserId;
 use valence::{Model, RecordId, Valence};
 
-use crate::generated::PermissionServiceUserPrincipal;
+use crate::generated::{PermissionGroup, PermissionServiceUserPrincipal};
 use crate::service_users::{service_user_principal_id, SERVICE_USER_PRINCIPAL_TABLE};
 use crate::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID};
 use crate::types::HistoryDiffItemDto;
@@ -18,6 +18,39 @@ use super::helpers::{
 };
 use super::membership::group_for_member_edit;
 use super::GaugeServiceError;
+
+/// Ensure the service user's principal row exists (idempotent upsert) and return it.
+///
+/// Shared by the group-member add path and the permission allow-list grant. Creating the row
+/// takes the service user's owner or a manage-any user (`SERVICE_USER_PRINCIPAL_MANAGER`), so the
+/// owner saves it when filing an on-behalf-of request; the approving maintainer then finds it
+/// already there.
+///
+/// # Errors
+///
+/// Valence failures, or `Invariant` when the row is missing after the save.
+pub async fn ensure_service_user_principal(
+    service_user: &ServiceUserId,
+    v: &Valence,
+) -> anyhow::Result<PermissionServiceUserPrincipal> {
+    let principal_id = service_user_principal_id(service_user);
+    if get_service_user_principal_raw(service_user, v)
+        .await?
+        .is_none()
+    {
+        let row = PermissionServiceUserPrincipal::new(
+            RecordId::new("service_user_account", service_user.as_str()),
+            service_user.as_str().to_string(),
+        )?;
+        PermissionServiceUserPrincipal::upsert(&principal_id, row, v, valence::use_!(r"When an operator **adds a service user to a permission group or grants it a permission**, we **save a principal row for the service user** that points at the service user's id. Member and allow lists show the service user's handle, and permission checks use the row to tell whether the service user belongs."))
+            .await?;
+    }
+    get_service_user_principal_raw(service_user, v)
+        .await?
+        .ok_or_else(|| {
+            GaugeServiceError::invariant("service user principal missing after save").into()
+        })
+}
 
 async fn get_service_user_principal_raw(
     service_user: &ServiceUserId,
@@ -100,23 +133,48 @@ pub async fn add_group_member_service_user(
         return Err(GaugeServiceError::not_found("service_user", service_user.as_str()).into());
     }
 
-    let principal_id = service_user_principal_id(service_user);
-    if get_service_user_principal_raw(service_user, v)
-        .await?
-        .is_none()
-    {
-        let row = PermissionServiceUserPrincipal::new(
-            RecordId::new("service_user_account", service_user.as_str()),
-            service_user.as_str().to_string(),
-        )?;
-        PermissionServiceUserPrincipal::upsert(&principal_id, row, v, valence::use_!(r"When an operator **adds a service user to a permission group**, we **save a principal row for the service user** that points at the service user's id. Group member lists show the service user's handle, and permission checks use the row to tell whether the service user belongs to the group."))
-            .await?;
+    relate_service_user_member(&group, group_id, service_user, actor_user_id, v).await
+}
+
+/// Add `service_user` as a member of `group_id` on behalf of an approved access request.
+///
+/// Like [`add_group_member_service_user`] but **without** the lepton service-user visibility
+/// check: the approved request carries the service-user owner's consent (established when the
+/// owner filed it), and the caller is the target's maintainer (checked by
+/// [`group_for_member_edit`]). The caller stays the session actor — this never elevates to
+/// [`valence::Actor::System`].
+///
+/// # Errors
+///
+/// As [`add_group_member_service_user`], minus the service-user `NotFound`.
+pub async fn add_group_member_service_user_via_request(
+    group_id: &str,
+    service_user: &ServiceUserId,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    let actor_user_id = require_user_id(v)?;
+    if group_id == SUPER_USER_GROUP_ID {
+        return Err(GaugeServiceError::validation(
+            "Service users cannot join the Super User group",
+        )
+        .into());
     }
-    let principal = get_service_user_principal_raw(service_user, v)
-        .await?
-        .ok_or_else(|| GaugeServiceError::invariant("service user principal missing after save"))?;
+    let group = group_for_member_edit(group_id, &actor_user_id, v).await?;
+    relate_service_user_member(&group, group_id, service_user, actor_user_id, v).await
+}
+
+/// Shared write path: ensure the service user's principal row exists, relate it as a member of
+/// `group`, and record history. Callers authorize the add and establish consent first.
+async fn relate_service_user_member(
+    group: &PermissionGroup,
+    group_id: &str,
+    service_user: &ServiceUserId,
+    actor_user_id: String,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    let principal = ensure_service_user_principal(service_user, v).await?;
     let principal_id = require_model_id(principal.id(), "principal")?;
-    if group_has_member_principal(&group, &principal_id, v).await? {
+    if group_has_member_principal(group, &principal_id, v).await? {
         return Ok(());
     }
     group
