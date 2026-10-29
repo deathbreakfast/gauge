@@ -43,10 +43,11 @@
 //! - **Super User group** — Chronon/script helpers that ensure the well-known
 //!   Super User group exists at boot so privilege is pinned to a fixed group id.
 //!   [Get started](#super-user-bootstrap)
-//! - **Service user group members** — A Lepton service user gets permissions only by joining
-//!   groups, so the group that grants people access to an API can grant an agent the same
-//!   access. Service users never own anything and can't write in Gauge. [Give a service user
-//!   permissions through a group](#give-a-service-user-permissions-through-a-group)
+//! - **Service user group members** (preview) — A Lepton service user gets permissions only
+//!   by joining groups, so the group that grants people access to an API can grant an agent
+//!   the same access. A service user owns nothing and every Gauge write refuses it. Its owner
+//!   can also request group access for it. [Give a service user permissions through a
+//!   group](#give-a-service-user-permissions-through-a-group)
 //! - **Lepton service user gate** — Decides who may create service users and who may manage
 //!   everyone's service users, from the `lepton.service_user.create` and
 //!   `lepton.service_user.manage_any` permissions and a seeded "Service user creators" group.
@@ -70,9 +71,9 @@
 //! [`service::actor_can`] is the primary route-guard check. It reads the calling Valence
 //! actor's user id, then evaluates direct grants and grants inherited through nested group
 //! membership. Call it on each protected request (or inside a server function) when you need a
-//! boolean allow/deny for a permission name. A Lepton service user actor is checked through
-//! the groups it belongs to instead (see [Give a service user permissions through a
-//! group](#give-a-service-user-permissions-through-a-group)).
+//! boolean allow/deny for a permission name. A Lepton service user actor has no direct grants,
+//! so `actor_can` checks the groups it belongs to (see [Give a service user permissions
+//! through a group](#give-a-service-user-permissions-through-a-group)).
 //!
 //! **Prerequisites:** `ssr` feature; a `Valence` handle whose actor is the
 //! caller (or use [`service::user_can`] with an explicit user id for admin
@@ -454,7 +455,8 @@
 //!
 //! Request/review lets an actor ask for a permission or group membership and an
 //! eligible reviewer approve or deny. Use this when self-service access is
-//! preferred over an owner granting directly.
+//! preferred over an owner granting directly. To request access for a service user you own,
+//! set `on_behalf_of` to its handle or id; approval then gives the service user the access.
 //!
 //! **Prerequisites:** `ssr`; requestor authenticated; reviewer must own the
 //! target (or be Super User) to decide.
@@ -499,8 +501,9 @@
 //!
 //! Empty/overlong reasons, already-held access, and unauthorized reviewers fail
 //! with `anyhow`. Inbox helpers: `list_permission_requests_for_actor` /
-//! `list_permission_requests_for_review`. Next:
-//! [Runtime access checks](#runtime-access-checks).
+//! `list_permission_requests_for_review`. A request with `on_behalf_of` fails when the
+//! service user doesn't exist, isn't active, or you don't own it and don't manage every service
+//! user. Next: [Runtime access checks](#runtime-access-checks).
 //!
 //! ## Super User bootstrap
 //!
@@ -539,14 +542,16 @@
 //! service user in a group, and [`service::actor_can`] and [`actor_can_raw::actor_can_raw`]
 //! allow it whatever the group holds, directly or through nested groups, for as
 //! long as the service user is active. Operators do this once per service user, usually right after
-//! creating it, from a session as a group owner or super user.
+//! creating it, from a session as a group owner or super user. The owner of a service user can
+//! instead ask for access with a permission request (see [Permission request and
+//! review](#permission-request-and-review)).
 //!
 //! **Prerequisites:** `ssr`; a service user created through
 //! `lepton_auth::service_users::create_service_user` (its
 //! `lepton_identity::service_users::ServiceUserId`); an existing group that holds the
 //! permissions the service user needs; a session Valence for a user who owns that group, or a
-//! super user. A group owner must also be able to see the service user: its owner, or someone
-//! who manages every service user.
+//! super user. The caller must also be able to see the service
+//! user, meaning its owner or someone who manages every service user (super users do).
 //!
 //! 1. Call [`service::add_group_member_service_user`] with the group id and the service user id.
 //! 2. Check as the service user: build its Valence from `service_user_id.actor()` and call
@@ -570,11 +575,13 @@
 //!
 //! A suspended service user, or one being deleted, holds nothing even while it is still a
 //! member, and deleting a service user removes its membership. Adding fails with
-//! [`service::GaugeServiceError`]: `NotAuthorized` when the caller doesn't own the
-//! group, `NotFound` when they can't see the service user, and `Validation` for the Super
-//! User group, which service users never join. Service users get no direct grants, own no group,
-//! domain, or permission, and every Gauge write refuses any service-user caller. Built-in
-//! service users, such as `cron`, still hold nothing. Next:
+//! [`service::GaugeServiceError`]: `NotAuthorized` when the caller doesn't own the group,
+//! `NotFound` when they can't see the service user, and `Validation` for the Super User group,
+//! which service users never join.
+//!
+//! Service users get no direct grants and own no group, domain, or permission. Every Gauge
+//! write refuses a service-user caller, and built-in service users such as `cron` hold nothing.
+//! This API is a preview and may change in a `0.1.x` release. Next:
 //! [Back Lepton service user creation with Gauge](#back-lepton-service-user-creation-with-gauge)
 //! for who may create service users in the first place.
 //!
@@ -625,8 +632,9 @@
 //! `lepton_identity::service_users::ServiceUserGateAlreadyInstalled` when a gate is already
 //! installed, and the first one stays. When a Gauge lookup fails, the gate reports a
 //! `gauge_lookup` error, which Lepton treats as a refusal. A service user never passes the
-//! gate, even as a member of "Service user creators". Next: [Give a service user permissions
-//! through a group](#give-a-service-user-permissions-through-a-group).
+//! gate, even as a member of "Service user creators". Next: [Give a service user
+//! permissions through a group](#give-a-service-user-permissions-through-a-group) to grant the
+//! service user access once it exists.
 //!
 //! ## Privilege-shaped mutations
 //!
