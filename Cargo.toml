@@ -199,10 +199,3 @@ orbital-tree = { git = "https://github.com/unified-field-dev/orbital", branch = 
 orbital-scheduler = { git = "https://github.com/unified-field-dev/orbital", branch = "main" }
 orbital-motion = { git = "https://github.com/unified-field-dev/orbital", branch = "main" }
 orbital-history = { git = "https://github.com/unified-field-dev/orbital", branch = "main" }
-
-# Service users live on lepton's mcp-server branch until they land on main.
-# Build against the local checkout; re-point to main before opening a PR.
-[patch."https://github.com/unified-field-dev/lepton"]
-lepton = { path = "../../L1-host-stack-kits/lepton/lepton" }
-lepton-host-adapter = { path = "../../L1-host-stack-kits/lepton/lepton-host-adapter" }
-lepton-identity = { path = "../../L1-host-stack-kits/lepton/lepton-identity" }
