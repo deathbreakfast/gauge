@@ -144,6 +144,6 @@ Expected contract when a host mounts `PermissionRoutes` from gauge-uf-app:
 - **Catalog enumeration (accepted residual):** any authenticated user can browse every permission and group by name, including resource-scoped rows such as `neutrino_secret.{id}.Reveal`. That browsability is the access-request surface. Revisit if a deployment ever serves more than one tenant.
 - **`search_principals`** clamps `max_results` (1..=50) and logs query length only (not the search string).
 - **History pagination:** `list_history` applies Valence `.limit(MAX_HISTORY_LIST_ROWS)`
-  (500) and, when `subject_kind` and `subject_id` are set, filters `source` in the
+  (500) and, when `subject_kind` and `subject_id` are set together, filters `source` in the
   query before ownership checks. Unfiltered global lists still ownership-filter in
   process after the hard scan cap (may under-return vs total editable rows).
