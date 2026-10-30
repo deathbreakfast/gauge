@@ -357,6 +357,8 @@ pub async fn seed_resource_kind_catalog(
     create_perm_id: &str,
 ) -> Result<(), ResourcePermissionError> {
     let kind = kind.into();
+    crate::actor_guard::refuse_unattributed_writer(v, "seed_resource_kind_catalog")
+        .map_err(|e| map_err(kind.prefix, "", "seed_resource_kind_catalog", e))?;
     let label = kind.display_label;
     let system = as_system(v, &format!("seed_resource_kind_catalog:{label}"));
     info!("[permission] seed_resource_kind_catalog kind={label} domain_id={domain_id}");

@@ -196,11 +196,14 @@ async fn ensure_permission(
 /// # Errors
 ///
 /// Returns `anyhow::Error` when Valence create or lookup fails while ensuring
-/// the owners group, a domain, or a permission row.
+/// the owners group, a domain, or a permission row, and a
+/// [`crate::service::GaugeServiceError::NotAuthorized`] when `v` belongs to a
+/// service user (such as a service user) or an anonymous caller.
 pub async fn sync_permission_manifests(
     v: &Valence,
     manifests: &[PermissionManifestInput],
 ) -> anyhow::Result<ManifestSyncStats> {
+    crate::actor_guard::refuse_unattributed_writer(v, "sync_permission_manifests")?;
     let system = as_system(v, "permission_sync_manifest");
     let mut stats = ManifestSyncStats::default();
 

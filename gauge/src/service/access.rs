@@ -112,7 +112,9 @@ pub async fn permission_allows_user(
                     }
                 }
             }
-            None => {}
+            // A user check never matches a service user's principal; service users are
+            // resolved by the service-user access check instead.
+            Some(PrincipalKind::ServiceUser) | None => {}
         }
     }
 
@@ -142,9 +144,29 @@ pub fn request_target_record(
 /// Returns `true` when the current actor has the named permission.
 ///
 /// This checks direct user grants and grants inherited through allowed groups
-/// (including nested group membership).
+/// (including nested group membership). A registered service user holds a permission
+/// only through groups it is a member of, and only while it is active (see
+/// [`crate::service_users`]). Built-in service users and anonymous callers hold nothing.
 pub async fn actor_can(v: &Valence, permission_name: &str) -> anyhow::Result<bool> {
     let permission_name = permission_name.trim();
+    if let Some(service_user) = lepton_identity::service_users::ServiceUserId::from_actor(v.actor())
+    {
+        let decision =
+            crate::service_users::access::service_user_decision(v, &service_user, permission_name)
+                .await;
+        crate::service_users::access::log_decision(permission_name, &decision);
+        let outcome = match &decision {
+            Ok(d) if d.allowed() => PermissionCheckOutcome::Allow,
+            Ok(_) => PermissionCheckOutcome::Deny,
+            Err(_) => PermissionCheckOutcome::Error,
+        };
+        crate::instrumentation::record_permission_check(&PermissionCheckRecord::from_valence(
+            v,
+            permission_name,
+            outcome,
+        ));
+        return decision.map(crate::service_users::access::ServiceUserDecision::allowed);
+    }
     let Some(actor_user_id) = current_user_id(v) else {
         crate::instrumentation::record_permission_check(&PermissionCheckRecord::from_valence(
             v,

@@ -83,6 +83,27 @@ Principal tables carry explicit AUTHENTICATED / SYSTEM_ONLY policies so ownershi
 walks do not need elevation. When you add Gauge-adjacent Valence shapes, set
 explicit policies on principal tables — an empty Valence policy allows.
 
+## Service users (preview)
+
+A Lepton service user is a non-human principal, such as an agent calling an API with a token.
+The surface is a preview and may change in a `0.1.x` release.
+
+- **Identity:** a service user is checked as itself, never as the person who owns it.
+  `actor_can` and `actor_can_raw` walk the groups it belongs to, directly or through nested
+  groups, under the session Valence with no `Actor::System` rebind.
+- **What it can hold:** permissions through group membership only. It has no direct grants,
+  owns no group, domain, or permission, and every Gauge write refuses a service-user caller.
+  It never joins the Super User group. A suspended service user, or one being deleted, holds
+  nothing even while it is a member, and deleting one removes its membership. Built-in service
+  users such as `cron` hold nothing.
+- **Who can add one to a group:** an owner of that group, or a Super User, who can also see the
+  service user (its owner, or someone with `lepton.service_user.manage_any`). A caller who can't
+  see it gets `NotFound`. The owner of a service user can ask for group access on its behalf
+  through a permission request, and a reviewer who owns the target decides it as usual.
+- **Who can create one:** the `lepton.service_user.create` permission, held by the seeded
+  "Service user creators" group, or Super User. A service user never passes this gate, and a
+  failed Gauge lookup is a refusal. `seed_service_user_permissions` runs only as System at boot.
+
 ## Super User role sync (F3)
 
 Chronon script `sync_super_user_membership_roles` aligns Super User group membership with Lepton `owner` / `super_admin` account roles. The job binds System **from the script context**, then calls `resync_eligible_super_user_group_members`. Hosts that mint those roles must authorize role assignment in Lepton; gauge treats Super User membership as the break-glass gate for taxonomy mutates when a domain has no owners yet.
@@ -123,6 +144,6 @@ Expected contract when a host mounts `PermissionRoutes` from gauge-uf-app:
 - **Catalog enumeration (accepted residual):** any authenticated user can browse every permission and group by name, including resource-scoped rows such as `neutrino_secret.{id}.Reveal`. That browsability is the access-request surface. Revisit if a deployment ever serves more than one tenant.
 - **`search_principals`** clamps `max_results` (1..=50) and logs query length only (not the search string).
 - **History pagination:** `list_history` applies Valence `.limit(MAX_HISTORY_LIST_ROWS)`
-  (500) and, when both `subject_kind` and `subject_id` are set, filters `source` in the
+  (500) and, when `subject_kind` and `subject_id` are set together, filters `source` in the
   query before ownership checks. Unfiltered global lists still ownership-filter in
   process after the hard scan cap (may under-return vs total editable rows).

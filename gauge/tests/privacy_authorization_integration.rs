@@ -413,3 +413,114 @@ async fn super_user_can_modify_super_user_group_membership_with_prefixed_actor_i
         "prefixed actor id must still authorize: {member_ids:?}"
     );
 }
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn clear_members_removes_inherited_grants_only_for_that_group() {
+    let system = test_valence(Actor::System {
+        operation: "clear_grants_setup".to_string(),
+    })
+    .await;
+    for id in ["admin", "direct", "nested_member", "also_elsewhere"] {
+        seed_user(id, &format!("{id}@example.com"), &system).await;
+    }
+    let admin = system.with_actor(Actor::User {
+        user_id: "admin".to_string(),
+    });
+    let input = |name: &str| PermissionGroupCreateInput {
+        name: name.to_string(),
+        description: String::new(),
+    };
+    let team = record_pk_id(
+        service::create_group_owner_only(input("Team"), &admin)
+            .await
+            .unwrap()
+            .id(),
+    );
+    let nested = record_pk_id(
+        service::create_group(input("Nested"), &admin)
+            .await
+            .unwrap()
+            .id(),
+    );
+    let elsewhere = record_pk_id(
+        service::create_group(input("Elsewhere"), &admin)
+            .await
+            .unwrap()
+            .id(),
+    );
+    let domain = service::create_domain(
+        PermissionDomainCreateInput {
+            name: "Clear".to_string(),
+            description: String::new(),
+        },
+        &admin,
+    )
+    .await
+    .unwrap();
+    let permission = service::create_permission(
+        PermissionCreateInput {
+            name: "ClearProbe".to_string(),
+            description: String::new(),
+            owners_group_id: team.clone(),
+            domain_id: record_pk_id(domain.id()),
+        },
+        &admin,
+    )
+    .await
+    .unwrap();
+    let permission_id = record_pk_id(permission.id());
+    service::grant_permission_to_group(&permission_id, &team, &admin)
+        .await
+        .unwrap();
+    service::grant_permission_to_group(&permission_id, &elsewhere, &admin)
+        .await
+        .unwrap();
+    service::add_group_member_user(&team, "direct", &admin)
+        .await
+        .unwrap();
+    service::add_group_member_user(&team, "also_elsewhere", &admin)
+        .await
+        .unwrap();
+    service::add_group_member_user(&elsewhere, "also_elsewhere", &admin)
+        .await
+        .unwrap();
+    service::add_group_member_user(&nested, "nested_member", &admin)
+        .await
+        .unwrap();
+    service::add_group_member_group(&team, &nested, &admin)
+        .await
+        .unwrap();
+
+    let as_user = |id: &str| {
+        system.with_actor(Actor::User {
+            user_id: id.to_string(),
+        })
+    };
+    for who in ["direct", "nested_member", "also_elsewhere"] {
+        assert!(
+            service::actor_can(&as_user(who), "ClearProbe")
+                .await
+                .unwrap(),
+            "{who} before"
+        );
+    }
+
+    assert_eq!(
+        service::clear_group_members(&team, &admin).await.unwrap(),
+        3
+    );
+
+    assert!(!service::actor_can(&as_user("direct"), "ClearProbe")
+        .await
+        .unwrap());
+    assert!(!service::actor_can(&as_user("nested_member"), "ClearProbe")
+        .await
+        .unwrap());
+    // Still holds it through an unrelated group.
+    assert!(service::actor_can(&as_user("also_elsewhere"), "ClearProbe")
+        .await
+        .unwrap());
+    // Owners keep the group's grants: an owner counts as holding what the group holds.
+    assert!(service::actor_can(&admin, "ClearProbe").await.unwrap());
+}

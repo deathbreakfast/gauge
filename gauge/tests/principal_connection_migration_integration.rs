@@ -350,6 +350,7 @@ async fn super_user_review_queue_hidden_but_direct_approval_allowed() -> anyhow:
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: record_pk_id(permission.id()),
             reason: "Need access".to_string(),
+            on_behalf_of: None,
         },
         &requestor_ctx,
     )

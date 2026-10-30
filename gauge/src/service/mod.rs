@@ -7,7 +7,9 @@
 //!
 //! - Permission/group CRUD with ownership/super-user authorization; domain
 //!   taxonomy CRUD with domain owners or Super User.
-//! - Principal graph management (users/groups, nested membership, owners).
+//! - Principal graph management (users/groups, nested membership, owners), plus
+//!   service users as group members; owner-only group creation and clearing
+//!   every member of a group in one call.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
 //! - Permission request workflow (create/list/review/decide).
 //! - History/audit projection for changed fields and actions.
@@ -24,10 +26,13 @@
 mod access;
 mod domains;
 mod error;
+mod group_membership_bulk;
 mod groups;
 mod helpers;
+mod membership;
 mod permissions;
 mod requests;
+mod service_user_members;
 
 /// Privacy-safe [`actor_can`] for `PolicyEvaluator`s — see [`crate::actor_can_raw`].
 pub use crate::actor_can_raw::{actor_can_raw, user_can_raw};
@@ -39,10 +44,11 @@ pub use domains::{
     remove_domain_owner_user, update_domain,
 };
 pub use error::GaugeServiceError;
+pub use group_membership_bulk::clear_group_members;
 pub use groups::{
     add_group_member_group, add_group_member_user, add_group_owner_user, create_group,
-    delete_group, remove_group_member_group, remove_group_member_user, remove_group_owner_user,
-    update_group,
+    create_group_owner_only, delete_group, remove_group_member_group, remove_group_member_user,
+    remove_group_owner_user, update_group,
 };
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
@@ -53,4 +59,8 @@ pub use requests::{
     actor_can_view_history_subject, create_permission_request, decide_permission_request,
     get_permission_request_detail, list_history, list_permission_requests_for_actor,
     list_permission_requests_for_review, MAX_HISTORY_LIST_ROWS, MAX_REQUEST_REASON_CHARS,
+};
+pub use service_user_members::{
+    add_group_member_service_user, can_add_group_member_service_user,
+    remove_group_member_service_user,
 };

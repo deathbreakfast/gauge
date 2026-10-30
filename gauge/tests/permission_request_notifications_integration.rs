@@ -100,6 +100,7 @@ async fn create_permission_request_notifies_permission_owners() -> anyhow::Resul
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: permission_id.clone(),
             reason: "Need deploy access".to_string(),
+            on_behalf_of: None,
         },
         &requestor_ctx,
     )
@@ -182,6 +183,7 @@ async fn create_permission_request_does_not_notify_non_owners_sad() -> anyhow::R
             target_kind: PermissionRequestTargetKind::Permission,
             target_id: permission_id,
             reason: "Need access".to_string(),
+            on_behalf_of: None,
         },
         &requestor_ctx,
     )
@@ -241,6 +243,7 @@ async fn decide_permission_request_notifies_requestor_for_terminal_statuses() ->
             target_kind: PermissionRequestTargetKind::Group,
             target_id: group_a_id,
             reason: "Need access to alpha".to_string(),
+            on_behalf_of: None,
         },
         &requestor_ctx,
     )
@@ -269,6 +272,7 @@ async fn decide_permission_request_notifies_requestor_for_terminal_statuses() ->
             target_kind: PermissionRequestTargetKind::Group,
             target_id: group_b_id,
             reason: "Need access to beta".to_string(),
+            on_behalf_of: None,
         },
         &requestor_ctx,
     )

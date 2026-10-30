@@ -10,22 +10,28 @@ use serde::{Deserialize, Serialize};
 
 /// Kind of principal a permission/group can be assigned to.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PrincipalKind {
     /// A single user.
     User,
     /// A permission group (which may itself contain users and nested groups).
     Group,
+    /// A Lepton service user (non-human). Only ever a group member.
+    ServiceUser,
 }
 
-/// Lightweight reference to a principal (user or group) for display in UI lists.
+/// Lightweight reference to a principal (user, group, or service user) for display in UI lists.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrincipalRefDto {
-    /// Whether this principal is a user or a group.
+    /// Whether this principal is a user, a group, or a service user.
     pub kind: PrincipalKind,
     /// Bare record id of the principal.
     pub id: String,
-    /// Display label (name/email) for the principal.
+    /// Display label (name/email) for the principal. A service user's handle.
     pub label: String,
+    /// Display label of the owning user. Set only for [`PrincipalKind::ServiceUser`],
+    /// and `None` when the service user has no owner or the owner can't be loaded.
+    pub owner_label: Option<String>,
 }
 
 /// Input for creating a new permission.
@@ -186,6 +192,11 @@ pub struct PermissionRequestCreateInput {
     pub target_id: String,
     /// Requestor-supplied justification.
     pub reason: String,
+    /// When set, the request is for a service user the requestor owns, named by its handle or
+    /// id. The requestor must own that active service user, or hold
+    /// `lepton.service_user.manage_any`.
+    #[serde(default)]
+    pub on_behalf_of: Option<String>,
 }
 
 /// Approve or deny decision for a permission request.
@@ -231,4 +242,9 @@ pub struct PermissionRequestRowDto {
     pub updated_at: String,
     /// Whether the current actor may review (approve/deny) this request.
     pub can_review: bool,
+    /// The service user the request is for, when filed on behalf of one, with its handle in
+    /// [`PrincipalRefDto::label`]. `owner_label` is not filled in here. `None` for a plain user
+    /// request.
+    #[serde(default)]
+    pub on_behalf_of: Option<PrincipalRefDto>,
 }

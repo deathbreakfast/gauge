@@ -353,6 +353,8 @@ where
             kind: kind.prefix.to_string(),
         });
     }
+    crate::actor_guard::refuse_unattributed_writer(v, "ensure_resource_permission_bundle")
+        .map_err(|e| map_err(&kind, &resource_id, "ensure_resource_permission_bundle", e))?;
 
     // Session users may only name themselves as maintainer.
     if matches!(v.actor(), valence::Actor::User { .. }) && !actor.matches_valence_user(v) {
@@ -659,8 +661,9 @@ async fn delete_permission_group_row(
 /// # Errors
 ///
 /// Returns [`ResourcePermissionError::InvalidResourceId`] when `resource_id`
-/// normalizes empty, or [`ResourcePermissionError::GaugeService`] when a Valence
-/// Restrict violation or backend failure blocks a step.
+/// normalizes empty, or [`ResourcePermissionError::GaugeService`] when the caller
+/// is a service user (such as a service user) or anonymous, or when a Valence Restrict
+/// violation or backend failure blocks a step.
 pub async fn delete_resource_permission_bundle(
     v: &Valence,
     kind: impl Into<ResourceKindDescriptor>,
@@ -673,6 +676,8 @@ pub async fn delete_resource_permission_bundle(
             kind: kind.prefix.to_string(),
         });
     }
+    crate::actor_guard::refuse_unattributed_writer(v, "delete_resource_permission_bundle")
+        .map_err(|e| map_err(&kind, &resource_id, "delete_resource_permission_bundle", e))?;
 
     let system = as_system(v, "delete_resource_permission_bundle");
     let dom_id = domain_id(kind, &resource_id);

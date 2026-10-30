@@ -11,7 +11,7 @@ use valence::{Actor, Valence};
 pub enum ActorId {
     /// A Lepton user (bare id or `user:…` — stored canonicalized without prefix).
     User(String),
-    /// A non-human service / bot (`Actor::ServiceUser`).
+    /// A non-human caller, built-in or registered (`Actor::ServiceUser`).
     Service(String),
 }
 
