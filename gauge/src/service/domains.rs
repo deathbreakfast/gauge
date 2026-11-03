@@ -262,8 +262,7 @@ pub async fn list_domains(
             let name = domain.name().to_lowercase();
             let description = domain
                 .description()
-                .map(|d| d.to_lowercase())
-                .unwrap_or_default();
+                .map_or_else(String::new, |d| d.to_lowercase());
             if !name.contains(needle) && !description.contains(needle) {
                 continue;
             }
