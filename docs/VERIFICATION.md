@@ -37,7 +37,7 @@ No monorepo sibling clones. Playwright / `gauge-app` hydrate are **not** CI jobs
 | Job | Commands |
 |-----|----------|
 | **fmt** | `cargo fmt -p gauge -p embedded-gauge-host -- --check` |
-| **clippy** | `cargo clippy -p gauge --features ssr --lib -- -D warnings` then scoped `--test …` suites below, then `cargo clippy -p embedded-gauge-host --all-targets -- -D warnings` |
+| **clippy** | `cargo clippy -p gauge --features ssr --lib -- -D warnings` then `--all-targets` (every test binary), then `cargo clippy -p embedded-gauge-host --all-targets -- -D warnings` |
 | **test** | `cargo test -p gauge --test workspace_members --test product_surface`; `cargo test -p gauge --features ssr --lib`; domain `--features ssr` contract suites; `cargo check` + `cargo run -p embedded-gauge-host` |
 | **docs** | `RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p gauge --features ssr --no-deps` |
 
@@ -65,21 +65,7 @@ export CARGO_TARGET_DIR=target-gauge
 
 cargo fmt -p gauge -p embedded-gauge-host -- --check
 cargo clippy -p gauge --features ssr --lib -- -D warnings
-cargo clippy -p gauge --features ssr \
-  --test permission_domain_contract \
-  --test permission_flows_integration \
-  --test privacy_authorization_integration \
-  --test privacy_policy_integration \
-  --test history_integration \
-  --test no_elevate_path_gate \
-  --test resource_permissions_integration \
-  --test permission_request_notifications_integration \
-  --test principal_connection_migration_integration \
-  --test super_user_scripts_integration \
-  --test search_source_dispatch_integration \
-  --test manifest_sync_integration \
-  --test permission_check_emission_integration \
-  -- -D warnings
+cargo clippy -p gauge --features ssr --all-targets -- -D warnings
 cargo clippy -p embedded-gauge-host --all-targets -- -D warnings
 cargo test -p gauge --test workspace_members --test product_surface
 cargo test -p gauge --features ssr --lib
@@ -107,10 +93,8 @@ RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p gauge --features 
 uf-dev CI stays green.
 Domain contract suites above are the behavioral merge gate.
 
-Do not run `--all-targets` clippy on `gauge`: older smoke suites
-(`trait_registry_smoke`, `search_registry_integration`) stay outside the primary
-matrix. Clippy CI uses `-- -D warnings` for the scoped targets (workspace deny
-lints still apply).
+Clippy runs `--all-targets` on `gauge` with `-- -D warnings` (workspace deny lints
+still apply), so new test files are linted without being added to a list.
 
 ### leptos-lints (local; not a CI hard gate)
 
