@@ -244,7 +244,7 @@ pub async fn create_permission_request(
             let group = get_group_raw(&input.target_id, system)
                 .await?
                 .ok_or_else(|| {
-                    anyhow::anyhow!("Permission group not found: {}", input.target_id)
+                    super::GaugeServiceError::not_found("permission_group", &input.target_id)
                 })?;
             if let Some(service_user) = &on_behalf_of {
                 if service_user_in_group(v, &input.target_id, service_user).await? {
