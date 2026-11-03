@@ -28,7 +28,7 @@ mod domains;
 mod error;
 mod group_membership_bulk;
 mod groups;
-mod helpers;
+pub(crate) mod helpers;
 mod membership;
 mod permissions;
 mod requests;
