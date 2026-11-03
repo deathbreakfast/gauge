@@ -521,6 +521,27 @@ mod owner_only_and_clear {
             matches!(kind(&err), GaugeServiceError::NotFound { entity, id } if entity == "permission_group" && id == "no_such_group")
         );
     }
+
+    #[tokio::test]
+    async fn owner_and_member_fns_on_missing_group_are_not_found_sad() {
+        let c = Ctx::new().await;
+        let a = c.user("a");
+        let results = [
+            service::add_group_owner_user("no_such_group", "m1", &a).await,
+            service::remove_group_owner_user("no_such_group", "m1", &a).await,
+            service::add_group_member_user("no_such_group", "m1", &a).await,
+            service::remove_group_member_user("no_such_group", "m1", &a).await,
+            service::add_group_member_group("no_such_group", "other", &a).await,
+            service::remove_group_member_group("no_such_group", "other", &a).await,
+        ];
+        for result in results {
+            let err = result.expect_err("missing group");
+            assert!(
+                matches!(kind(&err), GaugeServiceError::NotFound { entity, id } if entity == "permission_group" && id == "no_such_group"),
+                "unexpected error: {err:#}"
+            );
+        }
+    }
 }
 
 async fn super_user_seed(system: &valence::Valence, user: &str) {

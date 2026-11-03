@@ -320,7 +320,7 @@ pub async fn ensure_group_principal(
     let lookup = system;
     let group = get_group_raw(group_id, lookup)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     let group_thing = group
         .id()
         .ok_or_else(|| anyhow::anyhow!("Permission group id missing: {group_id}"))?

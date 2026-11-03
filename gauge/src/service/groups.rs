@@ -228,7 +228,7 @@ pub async fn add_group_owner_user(
     let system = v;
     let group = get_group_raw(group_id, system)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     if !group_has_owner_user(&group, &actor_candidates, system).await?
         && !actor_is_super_user(v).await?
     {
@@ -271,7 +271,7 @@ pub async fn remove_group_owner_user(
     let system = v;
     let group = get_group_raw(group_id, system)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     if !group_has_owner_user(&group, &actor_candidates, system).await?
         && !actor_is_super_user(v).await?
     {
@@ -329,7 +329,7 @@ pub async fn add_group_member_user(
     let system = v;
     let group = get_group_raw(group_id, system)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     if !group_has_owner_user(&group, &actor_candidates, system).await?
         && !actor_is_super_user(v).await?
     {
@@ -371,7 +371,7 @@ pub async fn remove_group_member_user(
     let system = v;
     let group = get_group_raw(group_id, system)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     if !group_has_owner_user(&group, &actor_candidates, system).await?
         && !actor_is_super_user(v).await?
     {
@@ -420,7 +420,7 @@ pub async fn add_group_member_group(
     let system = v;
     let group = get_group_raw(group_id, system)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     if !group_has_owner_user(&group, &actor_candidates, system).await?
         && !actor_is_super_user(v).await?
     {
@@ -474,7 +474,7 @@ pub async fn remove_group_member_group(
     let system = v;
     let group = get_group_raw(group_id, system)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     if !group_has_owner_user(&group, &actor_candidates, system).await?
         && !actor_is_super_user(v).await?
     {
