@@ -160,12 +160,18 @@ async fn service_user_and_anonymous_callers_are_refused_sad() {
     add_group_member_service_user(READERS, &su, &w.as_user("carol"))
         .await
         .expect("add");
-    assert!(list_service_user_groups(&su, &w.as_service_user(&su))
+    let err = list_service_user_groups(&su, &w.as_service_user(&su))
         .await
-        .is_err());
+        .unwrap_err();
     assert!(
-        list_service_user_permissions(&su, &w.as_actor(valence::Actor::Anonymous))
-            .await
-            .is_err()
+        err.to_string().contains("Authenticated user required"),
+        "{err}"
+    );
+    let err = list_service_user_permissions(&su, &w.as_actor(valence::Actor::Anonymous))
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("Authenticated user required"),
+        "{err}"
     );
 }
