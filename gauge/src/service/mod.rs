@@ -32,6 +32,7 @@ mod helpers;
 mod membership;
 mod permissions;
 mod requests;
+mod service_user_access_view;
 mod service_user_members;
 
 /// Privacy-safe [`actor_can`] for `PolicyEvaluator`s — see [`crate::actor_can_raw`].
@@ -60,6 +61,7 @@ pub use requests::{
     get_permission_request_detail, list_history, list_permission_requests_for_actor,
     list_permission_requests_for_review, MAX_HISTORY_LIST_ROWS, MAX_REQUEST_REASON_CHARS,
 };
+pub use service_user_access_view::{list_service_user_groups, list_service_user_permissions};
 pub use service_user_members::{
     add_group_member_service_user, can_add_group_member_service_user,
     remove_group_member_service_user,
