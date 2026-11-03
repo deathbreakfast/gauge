@@ -87,7 +87,7 @@ pub async fn request_row_from_model(
 }
 
 /// Build the display reference for a request's `on_behalf_of` service user: its handle as the
-/// label. Control-plane raw reads, so the request's named service user resolves for the target's
+/// label and its owner's display label as `owner_label`. Control-plane raw reads, so the request's named service user resolves for the target's
 /// maintainer deciding it, not only for the owner who filed it.
 async fn on_behalf_of_ref(
     principal: &RecordId,
@@ -114,7 +114,7 @@ async fn on_behalf_of_ref(
         kind: PrincipalKind::ServiceUser,
         id: service_user_id,
         label: account.handle().clone(),
-        owner_label: None,
+        owner_label: super::helpers::service_user_owner_label(&account, v).await,
     }))
 }
 
