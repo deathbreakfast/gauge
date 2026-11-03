@@ -11,7 +11,8 @@
 //!   service users as group members; owner-only group creation and clearing
 //!   every member of a group in one call.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
-//! - Permission request workflow (create/list/review/decide).
+//! - Permission request workflow (create/list/review/decide), including requests for a
+//!   service user and a lookup of the ones still pending.
 //! - History/audit projection for changed fields and actions.
 //!
 //! ## Errors
@@ -57,8 +58,9 @@ pub use permissions::{
 };
 pub use requests::{
     actor_can_view_history_subject, create_permission_request, decide_permission_request,
-    get_permission_request_detail, list_history, list_permission_requests_for_actor,
-    list_permission_requests_for_review, MAX_HISTORY_LIST_ROWS, MAX_REQUEST_REASON_CHARS,
+    get_permission_request_detail, list_history, list_pending_requests_for_service_user,
+    list_permission_requests_for_actor, list_permission_requests_for_review, MAX_HISTORY_LIST_ROWS,
+    MAX_REQUEST_REASON_CHARS,
 };
 pub use service_user_members::{
     add_group_member_service_user, can_add_group_member_service_user,
