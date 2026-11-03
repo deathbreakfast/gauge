@@ -6,7 +6,7 @@ valence_schema! {
     PermissionDomain {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_domain",
-        version: "0.1.0",
+        version: "0.1.1",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Permission grouping domain used to organize permission definitions",
 
