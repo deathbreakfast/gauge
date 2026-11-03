@@ -336,10 +336,7 @@ mod tests {
         let frag = normalize_id_fragment("A B");
         assert!(frag.starts_with("a_b_"));
         assert_eq!(frag.len(), "a_b_".len() + 8);
-        assert_eq!(
-            normalize_id_fragment("already_ok").starts_with("already_ok_"),
-            true
-        );
+        assert!(normalize_id_fragment("already_ok").starts_with("already_ok_"));
     }
 
     #[test]
@@ -381,13 +378,13 @@ mod tests {
         let d = kind.descriptor();
         assert_eq!(
             permission_name(kind, "stk-9", ResourceAction::Edit),
-            permission_name(&d, "stk-9", ResourceAction::Edit)
+            permission_name(d, "stk-9", ResourceAction::Edit)
         );
         assert_eq!(domain_id(kind, "stk-9"), domain_id(d, "stk-9"));
-        assert_eq!(owners_group_id(kind, "stk-9"), owners_group_id(&d, "stk-9"));
+        assert_eq!(owners_group_id(kind, "stk-9"), owners_group_id(d, "stk-9"));
         assert_eq!(
             permission_record_id(kind, "stk-9", ResourceAction::Delete),
-            permission_record_id(&d, "stk-9", ResourceAction::Delete)
+            permission_record_id(d, "stk-9", ResourceAction::Delete)
         );
     }
 }

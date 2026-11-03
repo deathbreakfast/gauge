@@ -46,29 +46,10 @@ jobs:
         with:
           toolchain: nightly-2026-08-07
           components: clippy
-      # Scoped targets only — VERIFICATION.md: do not use --all-targets on gauge.
-      - name: cargo clippy (gauge lib + contract suites)
+      - name: cargo clippy (gauge lib, tests and examples)
         run: |
           cargo clippy -p gauge --features ssr --lib -- -D warnings
-          cargo clippy -p gauge --features ssr \
-            --test manifest_sync_integration \
-            --test permission_check_emission_integration \
-            --test permission_domain_contract \
-            --test permission_flows_integration \
-            --test privacy_authorization_integration \
-            --test privacy_policy_integration \
-            --test history_integration \
-            --test no_elevate_path_gate \
-            --test resource_permissions_integration \
-            --test permission_request_notifications_integration \
-            --test principal_connection_migration_integration \
-            --test super_user_scripts_integration \
-            --test search_source_dispatch_integration \
-            --test service_user_principals_integration \
-            --test service_user_gate_integration \
-            --test service_user_write_sweep \
-            --test group_service_user_members_integration \
-            -- -D warnings
+          cargo clippy -p gauge --features ssr --all-targets -- -D warnings
       - name: cargo clippy (embedded-gauge-host)
         run: cargo clippy -p embedded-gauge-host --all-targets -- -D warnings
 
