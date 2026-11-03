@@ -112,6 +112,28 @@ pub struct PermissionDetailDto {
     pub can_request_access: bool,
 }
 
+/// A group a service user holds, as listed on the service user's access page.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceUserGroupDto {
+    /// Bare record id.
+    pub id: String,
+    /// Group name.
+    pub name: String,
+    /// Human-readable description.
+    pub description: String,
+}
+
+/// A permission a service user holds and the group it comes through.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceUserPermissionDto {
+    /// Permission name.
+    pub name: String,
+    /// Human-readable description.
+    pub description: String,
+    /// The group the permission is granted to. `None` for a grant made straight to the service user.
+    pub via_group: Option<ServiceUserGroupDto>,
+}
+
 /// Full permission group detail view, including owners and members.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PermissionGroupDetailDto {
