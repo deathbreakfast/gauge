@@ -48,6 +48,22 @@ async fn owner_requests_group_for_service_user_and_maintainer_approves_happy() {
     let on_behalf_of = row.on_behalf_of.expect("row names the service user");
     assert_eq!(on_behalf_of.kind, PrincipalKind::ServiceUser);
     assert_eq!(on_behalf_of.label, "deploy-bot");
+    let owner = on_behalf_of.owner_label.clone().expect("owner label");
+    assert!(owner.contains("alice"), "owner label names alice: {owner}");
+
+    // The maintainer who reviews the request sees the same owner label.
+    let detail = svc::get_permission_request_detail(&row.id, &w.as_user("bob"))
+        .await
+        .expect("bob loads the request")
+        .expect("request exists");
+    assert_eq!(
+        detail
+            .on_behalf_of
+            .expect("on_behalf_of")
+            .owner_label
+            .as_deref(),
+        Some(owner.as_str())
+    );
 
     let decided = svc::decide_permission_request(
         PermissionRequestDecisionInput {

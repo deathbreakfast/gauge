@@ -85,6 +85,7 @@ jobs:
           --test service_user_gate_integration
           --test service_user_write_sweep
           --test group_service_user_members_integration
+          --test request_on_behalf_of_service_user
       - name: cargo check + run (embedded-gauge-host)
         run: |
           cargo check -p embedded-gauge-host
