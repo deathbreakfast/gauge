@@ -341,19 +341,19 @@ pub async fn list_pending_requests_for_service_user(
 ) -> anyhow::Result<Vec<PermissionRequestRowDto>> {
     require_user_id(v)?;
     let service_user = resolve_owned_active_service_user(service_user, v).await?;
-    let rows = PermissionRequest::query(v, valence::use_!(r"In **Gauge permissions**, we **list Permission Request** so the product can show or process the matching set for this workflow. Callers allowed for **Gauge permissions** use the list; it is not a public dump of every field to anonymous visitors."))
+    let principal = RecordId::new(
+        SERVICE_USER_PRINCIPAL_TABLE,
+        crate::service_users::service_user_principal_id(&service_user),
+    );
+    let rows = PermissionRequest::query(v, valence::use_!(r"When a bot's **owner opens its access page**, we **list the access requests still pending for that bot** so the page shows requested instead of offering the request again. Only the bot's owner (or someone who manages every service user) can see them."))
         .where_status(valence::StringPredicate::Equals("PENDING".to_string()))
+        .where_on_behalf_of(valence::RecordPredicate::Equals(principal))
         .order_by_created_at(valence::SortDirection::Desc)
         .await?;
 
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        let Some(principal) = row.on_behalf_of() else {
-            continue;
-        };
-        if service_user_from_on_behalf_of(principal).ok().as_ref() == Some(&service_user) {
-            out.push(request_row_from_model(&row, v).await?);
-        }
+        out.push(request_row_from_model(&row, v).await?);
     }
     Ok(out)
 }
