@@ -705,6 +705,86 @@ async fn delete_resource_permission_bundle_tears_down_after_ensure() -> anyhow::
 }
 
 #[tokio::test]
+async fn delete_resource_permission_bundle_refuses_non_maintainer_user() -> anyhow::Result<()> {
+    let system = system_valence().await;
+    seed_gluon_catalog(&system).await?;
+    let maintainer = "maint_guard";
+    let outsider = "outsider_guard";
+    seed_user(maintainer, "maint_guard@example.test", &system).await;
+    seed_user(outsider, "outsider_guard@example.test", &system).await;
+
+    let bundle = ensure_resource_permission_bundle(
+        &system,
+        ResourcePermissionSpec {
+            kind: ResourceKind::GluonApp,
+            resource_id: "app-guard".into(),
+            display_name: "Guarded".into(),
+            actions: vec![ResourceAction::View],
+            actor: ActorId::user_for_system(&system, maintainer).expect("actor"),
+        },
+    )
+    .await?;
+
+    let err = delete_resource_permission_bundle(
+        &user_valence(&system, outsider),
+        ResourceKind::GluonApp,
+        "app-guard",
+    )
+    .await
+    .expect_err("non-maintainer must be refused");
+    match &err {
+        ResourcePermissionError::GaugeService {
+            operation, source, ..
+        } => {
+            assert_eq!(operation, "delete_resource_permission_bundle");
+            assert!(
+                matches!(
+                    source.downcast_ref::<service::GaugeServiceError>(),
+                    Some(service::GaugeServiceError::NotAuthorized { .. })
+                ),
+                "expected NotAuthorized, got: {source}"
+            );
+        }
+        other => panic!("expected GaugeService, got: {other}"),
+    }
+    assert!(
+        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+            .await?
+            .is_some(),
+        "domain must survive a refused delete"
+    );
+    assert!(
+        gauge::generated::PermissionGroup::get(&bundle.owners_group_id, &system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+            .await?
+            .is_some(),
+        "owners group must survive a refused delete"
+    );
+
+    // Never-ensured resource: a user call is a no-op.
+    delete_resource_permission_bundle(
+        &user_valence(&system, outsider),
+        ResourceKind::GluonApp,
+        "never-ensured-guard",
+    )
+    .await?;
+
+    // The maintainer's own session may tear the bundle down.
+    delete_resource_permission_bundle(
+        &user_valence(&system, maintainer),
+        ResourceKind::GluonApp,
+        "app-guard",
+    )
+    .await?;
+    assert!(
+        gauge::generated::PermissionDomain::get(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+            .await?
+            .is_none(),
+        "maintainer delete must remove the domain"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn resource_permission_list_browsable_for_outsider_happy() -> anyhow::Result<()> {
     let system = system_valence().await;
     seed_gluon_catalog(&system).await?;
