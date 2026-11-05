@@ -27,7 +27,7 @@ fn assert_not_found(err: &anyhow::Error) {
     );
 }
 
-async fn names(groups: Vec<gauge::types::ServiceUserGroupDto>) -> Vec<String> {
+fn ids(groups: Vec<gauge::types::ServiceUserGroupDto>) -> Vec<String> {
     groups.into_iter().map(|g| g.id).collect()
 }
 
@@ -41,7 +41,7 @@ async fn owner_lists_groups_and_permissions_happy() {
 
     let alice = w.as_user("alice");
     let groups = service_user_groups(&alice, &su).await.expect("groups");
-    assert_eq!(names(groups).await, vec![READERS.to_string()]);
+    assert_eq!(ids(groups), vec![READERS.to_string()]);
 
     let perms = service_user_effective_permissions(&alice, &su)
         .await
@@ -76,7 +76,7 @@ async fn nested_groups_are_followed_happy() {
         .expect("add");
 
     let alice = w.as_user("alice");
-    let mut groups = names(service_user_groups(&alice, &su).await.unwrap()).await;
+    let mut groups = ids(service_user_groups(&alice, &su).await.unwrap());
     groups.sort();
     let mut expected = vec![READERS.to_string(), child_id];
     expected.sort();

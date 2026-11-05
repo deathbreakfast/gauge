@@ -13,7 +13,7 @@ use super::access::{group_behind_principal, group_has_service_user_raw, service_
 use super::{service_user_principal_id, SERVICE_USER_PRINCIPAL_TABLE};
 use crate::actor_can_raw::model_pk_id;
 use crate::generated::{Permission, PermissionGroup};
-use crate::service::GaugeServiceError;
+use crate::service::{raw_table_rows, GaugeServiceError};
 use crate::types::{ServiceUserGroupDto, ServiceUserPermissionDto};
 
 /// Fail with `NotFound` unless the caller is a signed-in user who can see `service_user`.
@@ -50,17 +50,9 @@ async fn scan_table<T: serde::de::DeserializeOwned>(
     table: &str,
     v: &Valence,
 ) -> anyhow::Result<Vec<T>> {
-    let backend = v
-        .backend_for_table(table)
-        .map_err(|e| anyhow::anyhow!("resolve {table} backend: {e}"))?;
-    let rows = backend
-        .execute_compiled_query(&valence::__internal::CompiledQuery {
-            query_string: format!("SELECT * FROM {table}"),
-            params: vec![],
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("scan {table} (raw): {e}"))?;
-    rows.into_iter()
+    raw_table_rows(table, v)
+        .await?
+        .into_iter()
         .map(|row| serde_json::from_value(row).map_err(|e| anyhow::anyhow!("decode {table}: {e}")))
         .collect()
 }
