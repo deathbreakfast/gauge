@@ -51,6 +51,7 @@ pub use groups::{
     create_group_owner_only, delete_group, remove_group_member_group, remove_group_member_user,
     remove_group_owner_user, update_group,
 };
+pub(crate) use helpers::raw_table_rows;
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
     grant_permission_to_group, grant_permission_to_user, list_groups, list_permissions,

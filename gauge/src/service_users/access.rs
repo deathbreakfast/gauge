@@ -147,7 +147,7 @@ async fn service_user_is_active_raw(
 }
 
 /// The group a `permission_group_principal` points at; `None` for any other principal.
-async fn group_behind_principal(
+pub(super) async fn group_behind_principal(
     principal: &RecordId,
     v: &Valence,
 ) -> anyhow::Result<Option<PermissionGroup>> {
@@ -167,7 +167,7 @@ async fn group_behind_principal(
 
 /// Walk `group`, the groups nested in it, and groups that own it (owners count as
 /// holders, the same as for users), looking for the service user's principal among members.
-async fn group_has_service_user_raw(
+pub(super) async fn group_has_service_user_raw(
     group: &PermissionGroup,
     service_user_principal_id: &str,
     v: &Valence,
