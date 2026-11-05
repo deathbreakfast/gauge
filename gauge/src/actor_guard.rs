@@ -4,8 +4,8 @@
 //! run their writes as System because they create control-plane rows that no
 //! single user owns. The boot helpers accept only System; the bundle helpers
 //! also accept a User. Both refuse service users and anonymous requests, which
-//! could otherwise grant themselves permissions by calling them. The `service` layer gets the same result from
-//! `require_user_id`.
+//! could otherwise grant themselves permissions by calling them.
+//! The `service` layer gets the same result from `require_user_id`.
 
 use valence::{Actor, Valence};
 
