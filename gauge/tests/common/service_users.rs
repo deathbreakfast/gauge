@@ -5,7 +5,8 @@
 #![allow(dead_code)]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Once};
 
 use chrono::Utc;
 use gauge::manifest_sync::{
@@ -21,7 +22,9 @@ use lepton::generated::{
 use lepton_identity::service_users::ServiceUserId;
 use valence::{Actor, Model, RecordId, Valence};
 
-use crate::common::{mem_router, seed_super_user_group_with_member, seed_user, valence_for};
+use crate::common::{
+    mem_router_with_read_failure, seed_super_user_group_with_member, seed_user, valence_for,
+};
 
 /// Permission the test group holds.
 pub const READ: &str = "test.records.read";
@@ -31,9 +34,15 @@ pub const READERS: &str = "test_readers";
 pub struct World {
     pub system: Valence,
     router: std::sync::Arc<valence::DatabaseRouter>,
+    fail_reads: Arc<AtomicBool>,
 }
 
 impl World {
+    /// Make every backend read fail (or work again).
+    pub fn set_reads_failing(&self, failing: bool) {
+        self.fail_reads.store(failing, Ordering::SeqCst);
+    }
+
     pub fn as_user(&self, id: &str) -> Valence {
         valence_for(
             self.router.clone(),
@@ -64,7 +73,7 @@ pub fn install_gate() {
 /// in "Service user creators", and the [`READERS`] group holding [`READ`].
 pub async fn world() -> World {
     install_gate();
-    let router = mem_router();
+    let (router, fail_reads) = mem_router_with_read_failure();
     let system = valence_for(
         router.clone(),
         Actor::System {
@@ -79,7 +88,11 @@ pub async fn world() -> World {
     for id in ["alice", "bob", "dave"] {
         seed_user(id, &format!("{id}@example.test"), &system).await;
     }
-    let world = World { system, router };
+    let world = World {
+        system,
+        router,
+        fail_reads,
+    };
     gauge::service::add_group_member_user(
         SERVICE_USER_CREATORS_GROUP_ID,
         "alice",
