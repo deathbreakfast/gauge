@@ -521,7 +521,7 @@ pub async fn list_history(
             other => other.to_string(),
         };
         let diffs = vec![HistoryDiffItemDto {
-            field: field.clone(),
+            field,
             old_value: if old_s.is_empty() {
                 serde_json::Value::Null
             } else {
