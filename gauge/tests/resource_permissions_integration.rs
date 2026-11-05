@@ -732,11 +732,21 @@ async fn delete_resource_permission_bundle_refuses_non_maintainer_user() -> anyh
     )
     .await
     .expect_err("non-maintainer must be refused");
-    assert!(
-        err.to_string()
-            .contains("delete_resource_permission_bundle"),
-        "unexpected error: {err}"
-    );
+    match &err {
+        ResourcePermissionError::GaugeService {
+            operation, source, ..
+        } => {
+            assert_eq!(operation, "delete_resource_permission_bundle");
+            assert!(
+                matches!(
+                    source.downcast_ref::<service::GaugeServiceError>(),
+                    Some(service::GaugeServiceError::NotAuthorized { .. })
+                ),
+                "expected NotAuthorized, got: {source}"
+            );
+        }
+        other => panic!("expected GaugeService, got: {other}"),
+    }
     assert!(
         gauge::generated::PermissionDomain::get(&bundle.domain_id, &system, valence::use_!(r"**Test:** Fixture **Permission Domain** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
             .await?
