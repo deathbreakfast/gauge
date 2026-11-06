@@ -12,6 +12,7 @@ use gauge::types::{
     PermissionRequestTargetKind,
 };
 use serde::Deserialize;
+use uf_notifications_core::{send_notification, SendNotification};
 use valence::{Actor, RecordId, RecordPredicate, SortDirection, StringPredicate, Valence};
 
 #[derive(Debug, Deserialize)]
@@ -21,6 +22,7 @@ struct NotificationRow {
     title: String,
     message: String,
     url: Option<String>,
+    subject: Option<String>,
 }
 
 async fn permission_request_notifications_for_user(
@@ -43,6 +45,7 @@ async fn permission_request_notifications_for_user(
             title: row.title().clone(),
             message: row.message().clone(),
             url: row.url().cloned(),
+            subject: row.subject().cloned(),
         })
         .collect())
 }
@@ -125,6 +128,8 @@ async fn create_permission_request_notifies_permission_owners() -> anyhow::Resul
     );
     let expected_url = format!("/permission/requests/{}", request.id);
     assert_eq!(created.url.as_deref(), Some(expected_url.as_str()));
+    let expected_subject = format!("permission_request:{}", request.id);
+    assert_eq!(created.subject.as_deref(), Some(expected_subject.as_str()));
 
     Ok(())
 }
@@ -313,5 +318,65 @@ async fn decide_permission_request_notifies_requestor_for_terminal_statuses() ->
         "expected denied decision notification"
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn scoped_create_denies_request_notification_to_non_owner() -> anyhow::Result<()> {
+    let system = test_valence(Actor::System {
+        operation: "permission_request_scoped_deny_test".to_string(),
+    })
+    .await;
+
+    seed_user("owner", "owner@example.com", &system).await;
+    seed_user("requestor", "requestor@example.com", &system).await;
+    seed_user("outsider", "outsider@example.com", &system).await;
+
+    let owner_ctx = system.with_actor(Actor::User {
+        user_id: "owner".to_string(),
+    });
+    let requestor_ctx = system.with_actor(Actor::User {
+        user_id: "requestor".to_string(),
+    });
+
+    let group = service::create_group(
+        PermissionGroupCreateInput {
+            name: "Scoped Group".to_string(),
+            description: "group".to_string(),
+        },
+        &owner_ctx,
+    )
+    .await?;
+    let request = service::create_permission_request(
+        PermissionRequestCreateInput {
+            target_kind: PermissionRequestTargetKind::Group,
+            target_id: record_pk_id(group.id()),
+            reason: "Need access".to_string(),
+            on_behalf_of: None,
+        },
+        &requestor_ctx,
+    )
+    .await?;
+
+    let send_to = |user: &'static str| SendNotification {
+        user_id: RecordId::new("user", user),
+        kind: "permission_request".to_string(),
+        title: "Permission request submitted".to_string(),
+        message: "A new request is waiting for review.".to_string(),
+        subject: Some(format!("permission_request:{}", request.id)),
+        ..Default::default()
+    };
+
+    let denied = send_notification(send_to("outsider"), &requestor_ctx).await;
+    assert!(denied.is_err(), "non-owner must be outside the audience");
+    assert!(
+        permission_request_notifications_for_user(&system, "outsider")
+            .await?
+            .is_empty(),
+        "denied notification must not persist"
+    );
+
+    // The owner is in the audience of a pending request.
+    send_notification(send_to("owner"), &requestor_ctx).await?;
     Ok(())
 }

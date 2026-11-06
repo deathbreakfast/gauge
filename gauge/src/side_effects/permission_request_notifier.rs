@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use uf_notifications_core::{send_notification, SendNotification};
+use std::sync::Once;
+
+use uf_notifications_core::{register_notification_audience, send_notification, SendNotification};
 use valence::{Model, Mutation, MutationKind, RecordId, SideEffect};
 
 use crate::generated::{
@@ -102,6 +104,39 @@ fn status_changed_to_terminal(
     before_status != Some(status)
 }
 
+/// Register the audience check that scopes permission-request notifications.
+///
+/// Hosts call this once at boot, before serving. A recipient is in a request's
+/// audience when they are the requestor (decision notices) or, while the
+/// request is pending, an owner of the requested resource (new-request
+/// notices). The check runs under the sender's own session and answers for one
+/// recipient; it never returns or logs the owner list.
+pub fn register_permission_request_audience() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| {
+        register_notification_audience("permission_request", None, |subject, recipient, v| {
+            Box::pin(async move {
+                let Some(request_id) = subject.strip_prefix("permission_request:") else {
+                    return Ok(false);
+                };
+                let Some(request) = PermissionRequest::get(request_id, v, valence::use_!(r"When a **permission request** notification is sent, we **load the request** so Gauge can check that the recipient is the requestor or an owner of the requested resource. The request is not shown on this path; the result only allows or denies the notification.")).await? else {
+                    return Ok(false);
+                };
+                if record_id_part(request.requestor()) == recipient {
+                    return Ok(true);
+                }
+                if *request.status() != PermissionRequestStatus::Pending {
+                    return Ok(false);
+                }
+                let owners = target_owner_user_ids(request.target(), v)
+                    .await
+                    .map_err(|e| valence::Error::Internal(e.to_string()))?;
+                Ok(owners.iter().any(|o| record_id_part(o) == recipient))
+            })
+        });
+    });
+}
+
 /// Notifies target owners when a request is submitted, and notifies the requestor
 /// when their request is approved or denied.
 pub struct PermissionRequestNotifier;
@@ -122,6 +157,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                 let target = after.target();
                 let target_table = target.table().to_string();
                 let target_id = record_id_part(target);
+                let subject = format!("permission_request:{request_id}");
                 let owners = target_owner_user_ids(target, mutation.valence())
                     .await
                     .map_err(|e| valence::Error::Internal(e.to_string()))?;
@@ -138,6 +174,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                             ),
                             url: Some(format!("/permission/requests/{request_id}")),
                             data_json: None,
+                            subject: Some(subject.clone()),
                         },
                         notify_as,
                     )
@@ -175,6 +212,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                         message: format!("Your permission request was {decision}."),
                         url: Some(format!("/permission/requests/{request_id}")),
                         data_json: None,
+                        subject: Some(format!("permission_request:{request_id}")),
                     },
                     mutation.valence(),
                 )
