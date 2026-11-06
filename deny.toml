@@ -12,6 +12,8 @@ ignore = [
     # quick-xml <0.41 pinned by object_store 0.13 via surrealdb-core; no bump until surrealdb moves.
     { id = "RUSTSEC-2026-0194", reason = "quick-xml quadratic attr check; transitive via surrealdb -> object_store; upgrade blocked" },
     { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS; transitive via surrealdb -> object_store; upgrade blocked" },
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils unmaintained; transitive via surrealdb -> wasmtimer (dev-dependency only); no safe upgrade" },
+    { id = "RUSTSEC-2026-0454", reason = "reblessive unsound Send/Sync; transitive via surrealdb-core's query executor (surreal backend); no fixed release upstream" },
 ]
 
 [licenses]
