@@ -102,6 +102,7 @@ fn mem_router() -> Arc<DatabaseRouter> {
         },
     );
     gauge::embedded_surreal::register_storage(&mut router, backend);
+    gauge::side_effects::permission_request_notifier::register_permission_request_audience();
     Arc::new(router)
 }
 

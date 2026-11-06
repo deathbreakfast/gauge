@@ -177,6 +177,7 @@ pub fn valence_for(router: Arc<DatabaseRouter>, actor: Actor) -> Valence {
 }
 
 pub async fn test_valence(actor: Actor) -> Valence {
+    gauge::side_effects::permission_request_notifier::register_permission_request_audience();
     valence_for(mem_router(), actor)
 }
 
