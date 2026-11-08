@@ -84,6 +84,7 @@ impl uf_search_core::SearchSourceProvider for PlatformUserSearchSource {
                     title,
                     description: Some("User account".to_string()),
                     kind: "user".to_string(),
+                    image_url: None,
                 });
                 if out.len() >= max_results as usize {
                     break;
@@ -137,6 +138,7 @@ impl uf_search_core::SearchSourceProvider for PermissionGroupSearchSource {
                     title: group.name().clone(),
                     description: Some(group.description().cloned().unwrap_or_default()),
                     kind: "permission_group".to_string(),
+                    image_url: None,
                 })
                 .collect::<Vec<_>>();
             Ok(out)
