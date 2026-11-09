@@ -53,3 +53,32 @@ pub fn ensure_inventory_linked() {
         std::any::type_name::<crate::generated::PermissionServiceUserPrincipal>(),
     );
 }
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    #![allow(clippy::expect_used)]
+
+    /// Every permission check looks rows up by `name`; without the index each lookup scans
+    /// the whole table, which grows with every resource that gets a permission bundle.
+    #[test]
+    fn permission_names_are_indexed_happy() {
+        super::ensure_inventory_linked();
+        for table in ["permission", "permission_group", "permission_domain"] {
+            let meta = valence::SchemaRegistry::global()
+                .get_schema(table)
+                .expect("schema registered");
+            let field = |name: &str| {
+                meta.schema
+                    .fields
+                    .iter()
+                    .find(|f| f.name == name)
+                    .unwrap_or_else(|| panic!("{table}.{name} missing"))
+            };
+            assert!(field("name").indexed, "{table}.name should be indexed");
+            assert!(
+                !field("description").indexed,
+                "{table}.description should not be indexed"
+            );
+        }
+    }
+}

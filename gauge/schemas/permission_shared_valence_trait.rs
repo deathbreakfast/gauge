@@ -10,6 +10,8 @@ valence_trait_schema! {
                 // Uniqueness is enforced in `gauge::service` (create_group /
                 // create_permission). Schema-level `unique: true` still emits a
                 // Surreal `SELECT VALUE` check that SQLite rejects.
+                // Every permission check looks rows up by name, so index it.
+                indexed: true,
                 validations: [Validator::MinLength(1), Validator::MaxLength(200)],
             },
             description: {
