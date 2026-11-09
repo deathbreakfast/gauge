@@ -13,6 +13,7 @@ ignore = [
     { id = "RUSTSEC-2026-0194", reason = "quick-xml quadratic attr check; transitive via surrealdb -> object_store; upgrade blocked" },
     { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS; transitive via surrealdb -> object_store; upgrade blocked" },
     { id = "RUSTSEC-2026-0441", reason = "pin-utils unmaintained; transitive via surrealdb -> wasmtimer (dev-dependency only); no safe upgrade" },
+    { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.30 bundled SQLite (CVE-2026-119375); transitive via uf-valence-backend-sqlite -> sqlx 0.8.6, which pins libsqlite3-sys ^0.30; fix needs libsqlite3-sys >=0.39, blocked until sqlx/valence upgrade" },
     { id = "RUSTSEC-2026-0454", reason = "reblessive unsound Send/Sync; transitive via surrealdb-core 3.3 (dev-dependency of gauge); fix needs surrealdb 4.0, blocked until the upgrade lands" },
 ]
 
