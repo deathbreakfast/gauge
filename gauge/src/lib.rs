@@ -573,6 +573,11 @@
 //! assert!(!actor_can(&service_user, "spectra.query.gauge_permission_check_log").await?);
 //! ```
 //!
+//! To see what a service user has, call [`service::list_service_user_groups`] for its groups and
+//! [`service::list_service_user_permissions`] for the permissions it holds, whether through a group
+//! or a direct grant. Both are for the service user's owner or someone who manages every service
+//! user; anyone else gets `NotFound`.
+//!
 //! A suspended service user, or one being deleted, holds nothing even while it is still a
 //! member, and deleting a service user removes its membership. Adding fails with
 //! [`service::GaugeServiceError`]: `NotAuthorized` when the caller doesn't own the group,

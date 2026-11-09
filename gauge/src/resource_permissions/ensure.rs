@@ -643,6 +643,42 @@ async fn delete_permission_group_row(
     Ok(())
 }
 
+/// Gate a `User` caller of [`delete_resource_permission_bundle`] on owning the
+/// bundle's owners group. `Ok(false)` means the bundle does not exist, so there
+/// is nothing to tear down.
+async fn require_bundle_maintainer(
+    system: &Valence,
+    kind: &ResourceKindDescriptor,
+    resource_id: &str,
+    own_id: &str,
+    user_id: &str,
+) -> Result<bool, ResourcePermissionError> {
+    let op = "delete_resource_permission_bundle";
+    let Some(group) = crate::service::helpers::get_group_raw(own_id, system)
+        .await
+        .map_err(|e| map_err(kind, resource_id, op, e))?
+    else {
+        return Ok(false);
+    };
+    let candidates = crate::service::helpers::user_id_candidates(user_id);
+    let is_maintainer = crate::service::helpers::group_has_owner_user(&group, &candidates, system)
+        .await
+        .map_err(|e| map_err(kind, resource_id, op, e))?;
+    if !is_maintainer {
+        log::warn!(
+            target: "gauge.write_guard",
+            "gauge write refused op={op} actor_kind=non_maintainer_user"
+        );
+        return Err(map_err(
+            kind,
+            resource_id,
+            op,
+            crate::service::GaugeServiceError::not_authorized(op),
+        ));
+    }
+    Ok(true)
+}
+
 /// Tear down a per-resource permission bundle (permissions → owners group → domain).
 ///
 /// Idempotent: a never-ensured or already-removed resource returns `Ok(())`. Never
@@ -652,9 +688,12 @@ async fn delete_permission_group_row(
 /// the order required by `on_delete: Restrict` edges from permission → domain /
 /// `owners_group`. Allowed-principal M2M edges cascade with the permission rows.
 ///
-/// Runs as System internally because domain delete still requires Super User
-/// (or System via the Super User evaluator) for resource-scoped plumbing rows
-/// (same elevation pattern as [`ensure_resource_permission_bundle`]). Physical
+/// A `User` caller must own the bundle's owners group (the maintainer that
+/// [`ensure_resource_permission_bundle`] recorded, directly or through a nested
+/// owner group); any other user is refused and the bundle stays intact. `System`
+/// callers skip that check. The teardown itself runs as System because domain
+/// delete still requires Super User (or System via the Super User evaluator) for
+/// resource-scoped plumbing rows. Physical
 /// deletes use [`valence::delete_entity_now`] (and a group-row edge teardown helper)
 /// so Restrict blockers are gone before the next step.
 ///
@@ -662,8 +701,9 @@ async fn delete_permission_group_row(
 ///
 /// Returns [`ResourcePermissionError::InvalidResourceId`] when `resource_id`
 /// normalizes empty, or [`ResourcePermissionError::GaugeService`] when the caller
-/// is a service user (such as a service user) or anonymous, or when a Valence Restrict
-/// violation or backend failure blocks a step.
+/// is a service user or anonymous, when a `User` caller does not own the bundle's
+/// owners group, or when a Valence Restrict violation or backend failure blocks a
+/// step.
 pub async fn delete_resource_permission_bundle(
     v: &Valence,
     kind: impl Into<ResourceKindDescriptor>,
@@ -682,6 +722,12 @@ pub async fn delete_resource_permission_bundle(
     let system = as_system(v, "delete_resource_permission_bundle");
     let dom_id = domain_id(kind, &resource_id);
     let own_id = owners_group_id(kind, &resource_id);
+
+    if let Some(user_id) = v.actor().user_id() {
+        if !require_bundle_maintainer(&system, &kind, &resource_id, &own_id, user_id).await? {
+            return Ok(());
+        }
+    }
 
     info!(
         "[permission] delete_resource_permission_bundle start kind={} resource_id={}",

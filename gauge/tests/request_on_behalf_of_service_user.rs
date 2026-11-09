@@ -48,6 +48,22 @@ async fn owner_requests_group_for_service_user_and_maintainer_approves_happy() {
     let on_behalf_of = row.on_behalf_of.expect("row names the service user");
     assert_eq!(on_behalf_of.kind, PrincipalKind::ServiceUser);
     assert_eq!(on_behalf_of.label, "deploy-bot");
+    let owner = on_behalf_of.owner_label.clone().expect("owner label");
+    assert!(owner.contains("alice"), "owner label names alice: {owner}");
+
+    // The maintainer who reviews the request sees the same owner label.
+    let detail = svc::get_permission_request_detail(&row.id, &w.as_user("bob"))
+        .await
+        .expect("bob loads the request")
+        .expect("request exists");
+    assert_eq!(
+        detail
+            .on_behalf_of
+            .expect("on_behalf_of")
+            .owner_label
+            .as_deref(),
+        Some(owner.as_str())
+    );
 
     let decided = svc::decide_permission_request(
         PermissionRequestDecisionInput {
@@ -204,4 +220,134 @@ async fn unknown_handle_gets_the_not_owned_refusal_sad() {
             "{handle}: unexpected error: {err}"
         );
     }
+}
+
+/// Happy: the owner sees the pending request for the bot, and the list empties once approved.
+#[tokio::test]
+async fn pending_lookup_shows_request_until_decided_happy() {
+    let w = world().await;
+    common::seed_group_with_owner(&w.system, TEAM, "bob").await;
+    let service_user = create_service_user(&w, "alice", "deploy-bot").await;
+    let alice = w.as_user("alice");
+
+    assert!(
+        svc::list_pending_requests_for_service_user(service_user.as_str(), &alice)
+            .await
+            .expect("lookup")
+            .is_empty()
+    );
+    let row =
+        svc::create_permission_request(group_request(TEAM, Some(service_user.as_str())), &alice)
+            .await
+            .expect("file request");
+    let pending = svc::list_pending_requests_for_service_user("deploy-bot", &alice)
+        .await
+        .expect("lookup by handle");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, row.id);
+    assert_eq!(pending[0].target_id, TEAM);
+
+    svc::decide_permission_request(
+        PermissionRequestDecisionInput {
+            request_id: row.id,
+            decision: PermissionRequestDecision::Approve,
+        },
+        &w.as_user("bob"),
+    )
+    .await
+    .expect("bob approves");
+    assert!(
+        svc::list_pending_requests_for_service_user(service_user.as_str(), &alice)
+            .await
+            .expect("lookup")
+            .is_empty()
+    );
+}
+
+/// Sad: a second pending request for the same bot and target is refused.
+#[tokio::test]
+async fn duplicate_pending_request_for_service_user_is_refused_sad() {
+    let w = world().await;
+    common::seed_group_with_owner(&w.system, TEAM, "bob").await;
+    let service_user = create_service_user(&w, "alice", "deploy-bot").await;
+    let alice = w.as_user("alice");
+    svc::create_permission_request(group_request(TEAM, Some(service_user.as_str())), &alice)
+        .await
+        .expect("first request");
+
+    let err =
+        svc::create_permission_request(group_request(TEAM, Some(service_user.as_str())), &alice)
+            .await
+            .expect_err("duplicate");
+    assert!(
+        err.to_string().contains("already pending"),
+        "unexpected error: {err}"
+    );
+}
+
+/// Happy: a pending request for the bot doesn't block alice's own request for the same group,
+/// another bot's request, or a fresh request after a denial.
+#[tokio::test]
+async fn duplicate_guard_is_scoped_to_target_and_bot_happy() {
+    let w = world().await;
+    common::seed_group_with_owner(&w.system, TEAM, "bob").await;
+    let bot_a = create_service_user(&w, "alice", "bot-a").await;
+    let bot_b = create_service_user(&w, "alice", "bot-b").await;
+    let alice = w.as_user("alice");
+
+    let first = svc::create_permission_request(group_request(TEAM, Some(bot_a.as_str())), &alice)
+        .await
+        .expect("bot a");
+    svc::create_permission_request(group_request(TEAM, Some(bot_b.as_str())), &alice)
+        .await
+        .expect("bot b is a different bot");
+    svc::create_permission_request(group_request(TEAM, None), &alice)
+        .await
+        .expect("alice's own request is a different principal");
+
+    svc::decide_permission_request(
+        PermissionRequestDecisionInput {
+            request_id: first.id,
+            decision: PermissionRequestDecision::Deny,
+        },
+        &w.as_user("bob"),
+    )
+    .await
+    .expect("deny");
+    svc::create_permission_request(group_request(TEAM, Some(bot_a.as_str())), &alice)
+        .await
+        .expect("a denied request doesn't block a new one");
+}
+
+/// Sad: someone who doesn't own the bot can't list its pending requests; a paused bot is refused.
+#[tokio::test]
+async fn pending_lookup_requires_owner_and_active_bot_sad() {
+    let w = world().await;
+    common::seed_group_with_owner(&w.system, TEAM, "bob").await;
+    let service_user = create_service_user(&w, "alice", "deploy-bot").await;
+
+    let err =
+        svc::list_pending_requests_for_service_user(service_user.as_str(), &w.as_user("dave"))
+            .await
+            .expect_err("dave doesn't own the bot");
+    assert!(
+        err.to_string().contains("service user you own"),
+        "unexpected error: {err}"
+    );
+
+    set_service_user_status(
+        &w,
+        "alice",
+        &service_user,
+        ServiceUserAccountStatus::Suspended,
+    )
+    .await;
+    let err =
+        svc::list_pending_requests_for_service_user(service_user.as_str(), &w.as_user("alice"))
+            .await
+            .expect_err("paused bot");
+    assert!(
+        err.to_string().contains("paused"),
+        "unexpected error: {err}"
+    );
 }

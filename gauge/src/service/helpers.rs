@@ -320,7 +320,7 @@ pub async fn ensure_group_principal(
     let lookup = system;
     let group = get_group_raw(group_id, lookup)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission group not found: {group_id}"))?;
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
     let group_thing = group
         .id()
         .ok_or_else(|| anyhow::anyhow!("Permission group id missing: {group_id}"))?
@@ -386,6 +386,23 @@ pub async fn principal_ref_from_record(
     }
 }
 
+/// Display label of the user who owns `account`: their profile name or email, the owner id when
+/// the owner can't be loaded under `v`, and `None` when the service user has no owner.
+pub async fn service_user_owner_label(
+    account: &lepton::generated::ServiceUserAccount,
+    v: &Valence,
+) -> Option<String> {
+    let owner_id = account
+        .user()
+        .and_then(|owner| valence::extract_id_from_record(owner).ok())?;
+    match lepton::generated::User::get(&owner_id, v, valence::use_!(r"When **Gauge** shows a **service user** (in a group's member list or on an access request), we **load its owning user** so the page can show who owns the service user. People who may see that list or request see the owner's name; nothing else uses it.")).await {
+        Ok(Some(owner)) => {
+            Some(crate::search_sources::user_principal_label(&owner, &owner_id, v).await)
+        }
+        Ok(None) | Err(_) => Some(owner_id),
+    }
+}
+
 /// Resolve a service user principal row to a display reference: the service user's handle as
 /// the label and the owning user's label as `owner_label`. `None` when the principal or its
 /// service user is gone or unreadable under `v`.
@@ -413,18 +430,7 @@ async fn service_user_principal_ref(
     else {
         return Ok(None);
     };
-    let owner_label = match account
-        .user()
-        .and_then(|owner| valence::extract_id_from_record(owner).ok())
-    {
-        Some(owner_id) => match lepton::generated::User::get(&owner_id, v, valence::use_!(r"When **Gauge** shows a **service user in a group's member list**, we **load its owning user** so the list can show who owns the service user. Editors of the group see the owner's name; nothing else uses it.")).await {
-            Ok(Some(owner)) => {
-                Some(crate::search_sources::user_principal_label(&owner, &owner_id, v).await)
-            }
-            Ok(None) | Err(_) => Some(owner_id),
-        },
-        None => None,
-    };
+    let owner_label = service_user_owner_label(&account, v).await;
     Ok(Some(PrincipalRefDto {
         kind: PrincipalKind::ServiceUser,
         id: service_user_id,

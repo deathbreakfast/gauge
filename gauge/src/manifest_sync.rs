@@ -72,18 +72,6 @@ fn normalized_id(value: &str) -> String {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::normalized_id;
-
-    #[test]
-    fn normalized_id_lowercases_and_replaces_non_alnum() {
-        assert_eq!(normalized_id("Counter.Admin"), "counter_admin");
-        assert_eq!(normalized_id("already_ok"), "already_ok");
-        assert_eq!(normalized_id("A B"), "a_b");
-    }
-}
-
 async fn ensure_domain(
     domain: &PermissionDomainInput,
     system: &Valence,
@@ -197,13 +185,13 @@ async fn ensure_permission(
 ///
 /// Returns `anyhow::Error` when Valence create or lookup fails while ensuring
 /// the owners group, a domain, or a permission row, and a
-/// [`crate::service::GaugeServiceError::NotAuthorized`] when `v` belongs to a
-/// service user (such as a service user) or an anonymous caller.
+/// [`crate::service::GaugeServiceError::NotAuthorized`] when `v` is not a
+/// System session.
 pub async fn sync_permission_manifests(
     v: &Valence,
     manifests: &[PermissionManifestInput],
 ) -> anyhow::Result<ManifestSyncStats> {
-    crate::actor_guard::refuse_unattributed_writer(v, "sync_permission_manifests")?;
+    crate::actor_guard::refuse_non_system_writer(v, "sync_permission_manifests")?;
     let system = as_system(v, "permission_sync_manifest");
     let mut stats = ManifestSyncStats::default();
 
@@ -226,4 +214,16 @@ pub async fn sync_permission_manifests(
     }
 
     Ok(stats)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalized_id;
+
+    #[test]
+    fn normalized_id_lowercases_and_replaces_non_alnum() {
+        assert_eq!(normalized_id("Counter.Admin"), "counter_admin");
+        assert_eq!(normalized_id("already_ok"), "already_ok");
+        assert_eq!(normalized_id("A B"), "a_b");
+    }
 }

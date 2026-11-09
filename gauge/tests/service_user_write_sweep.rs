@@ -372,3 +372,34 @@ async fn tm_service_user_write_sweep_sad() {
         assert_eq!(before, after, "{label} changed Gauge state");
     }
 }
+
+#[tokio::test]
+async fn tm_boot_helpers_refuse_user_sad() {
+    let w = world().await;
+    let read_id = Permission::query(&w.system, valence::use_!(r"**Test:** Fixture **permission** lookup in the gauge write sweep to find the readers permission id. CI and developers running the suite only."))
+        .where_name(StringPredicate::Equals(READ.into()))
+        .first()
+        .await
+        .unwrap()
+        .unwrap()
+        .id()
+        .and_then(|r| valence::extract_id_from_record(r).ok())
+        .unwrap();
+    let user = w.as_user("alice");
+    let before = fingerprint(&w, &read_id).await;
+    assert!(sync_permission_manifests(&user, &[manifest()])
+        .await
+        .is_err());
+    assert!(seed_resource_kind_catalog(
+        &user,
+        ResourceKind::GluonApp,
+        "sweep_catalog",
+        "Sweep",
+        "sweep_create"
+    )
+    .await
+    .is_err());
+    assert!(ensure_gluon_default_operator_groups(&user).await.is_err());
+    let after = fingerprint(&w, &read_id).await;
+    assert_eq!(before, after, "boot helpers changed state for a User");
+}

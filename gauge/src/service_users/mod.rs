@@ -8,6 +8,9 @@
 //! super user, never owns a group, domain, or permission, and cannot write
 //! anything in Gauge. Built-in service users, such as `cron`, still get nothing.
 //!
+//! [`service_user_groups`] and [`service_user_effective_permissions`] list what a service user holds, for
+//! its owner or a manage-any user, under their own request Valence.
+//!
 //! The same module answers Lepton's service user gate. [`seed_service_user_permissions`]
 //! creates [`LEPTON_SERVICE_USER_CREATE`] and [`LEPTON_SERVICE_USER_MANAGE_ANY`] plus the
 //! "Service user creators" group, and [`install_gauge_service_user_gate`] makes Lepton ask
@@ -19,12 +22,14 @@
 pub(crate) mod access;
 mod gate;
 mod policy;
+mod reads;
 mod seed;
 
 use lepton_identity::service_users::{ServiceUserId, SERVICE_USER_PREFIX};
 
 pub use gate::{install_gauge_service_user_gate, GaugeServiceUserGate};
 pub use policy::{ServiceUserPrincipalManager, SERVICE_USER_PRINCIPAL_MANAGER};
+pub use reads::{service_user_effective_permissions, service_user_groups};
 pub use seed::{seed_service_user_permissions, ServiceUserSeedStats};
 
 /// Permission that lets a user create service users they own.

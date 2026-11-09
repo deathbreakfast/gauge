@@ -471,8 +471,7 @@ pub async fn list_permissions(
             let name = permission.name().to_lowercase();
             let description = permission
                 .description()
-                .map(|d| d.to_lowercase())
-                .unwrap_or_default();
+                .map_or_else(String::new, |d| d.to_lowercase());
             if !name.contains(needle) && !description.contains(needle) {
                 continue;
             }
@@ -504,8 +503,7 @@ pub async fn list_groups(
             let name = group.name().to_lowercase();
             let description = group
                 .description()
-                .map(|d| d.to_lowercase())
-                .unwrap_or_default();
+                .map_or_else(String::new, |d| d.to_lowercase());
             if !name.contains(needle) && !description.contains(needle) {
                 continue;
             }

@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -23,13 +24,25 @@ use valence::{
 #[derive(Debug)]
 struct TolerantMemBackend {
     inner: InMemoryBackend,
+    /// While set, record, edge and query reads fail (lookup-failure tests).
+    fail_reads: Arc<AtomicBool>,
 }
 
 impl TolerantMemBackend {
-    fn new() -> Self {
+    fn new(fail_reads: Arc<AtomicBool>) -> Self {
         Self {
             inner: InMemoryBackend::new(),
+            fail_reads,
         }
+    }
+
+    fn check_reads(&self) -> Result<()> {
+        if self.fail_reads.load(Ordering::SeqCst) {
+            return Err(valence::Error::Internal(
+                "injected read failure".to_string(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -51,6 +64,7 @@ impl DatabaseBackend for TolerantMemBackend {
         &self,
         compiled: &CompiledQuery,
     ) -> Result<Vec<serde_json::Value>> {
+        self.check_reads()?;
         self.inner.execute_compiled_query(compiled).await
     }
 
@@ -59,6 +73,7 @@ impl DatabaseBackend for TolerantMemBackend {
     }
 
     async fn get_record(&self, table: &str, id: &str) -> Result<Option<serde_json::Value>> {
+        self.check_reads()?;
         self.inner.get_record(table, id).await
     }
 
@@ -110,6 +125,7 @@ impl DatabaseBackend for TolerantMemBackend {
     }
 
     async fn get_edge_targets(&self, from: &RecordId, edge_table: &str) -> Result<Vec<RecordId>> {
+        self.check_reads()?;
         self.inner.get_edge_targets(from, edge_table).await
     }
 
@@ -151,8 +167,15 @@ fn prepare_test_env() {
 
 /// Fresh tolerant mem backend shared by the `default` (lepton) and `gauge` logicals.
 pub fn mem_router() -> Arc<DatabaseRouter> {
+    mem_router_with_read_failure().0
+}
+
+/// Like [`mem_router`], plus a switch that makes every backend read fail while set.
+pub fn mem_router_with_read_failure() -> (Arc<DatabaseRouter>, Arc<AtomicBool>) {
     prepare_test_env();
-    let backend: Arc<dyn DatabaseBackend> = Arc::new(TolerantMemBackend::new());
+    let fail_reads = Arc::new(AtomicBool::new(false));
+    let backend: Arc<dyn DatabaseBackend> =
+        Arc::new(TolerantMemBackend::new(Arc::clone(&fail_reads)));
     let mut router = DatabaseRouter::new();
     register_backend_logical_names(
         &mut router,
@@ -164,7 +187,7 @@ pub fn mem_router() -> Arc<DatabaseRouter> {
         },
     );
     gauge::embedded_surreal::register_storage(&mut router, backend);
-    Arc::new(router)
+    (Arc::new(router), fail_reads)
 }
 
 pub fn valence_for(router: Arc<DatabaseRouter>, actor: Actor) -> Valence {

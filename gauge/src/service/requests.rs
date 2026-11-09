@@ -87,7 +87,7 @@ pub async fn request_row_from_model(
 }
 
 /// Build the display reference for a request's `on_behalf_of` service user: its handle as the
-/// label. Control-plane raw reads, so the request's named service user resolves for the target's
+/// label and its owner's display label as `owner_label`. Control-plane raw reads, so the request's named service user resolves for the target's
 /// maintainer deciding it, not only for the owner who filed it.
 async fn on_behalf_of_ref(
     principal: &RecordId,
@@ -114,7 +114,7 @@ async fn on_behalf_of_ref(
         kind: PrincipalKind::ServiceUser,
         id: service_user_id,
         label: account.handle().clone(),
-        owner_label: None,
+        owner_label: super::helpers::service_user_owner_label(&account, v).await,
     }))
 }
 
@@ -244,7 +244,7 @@ pub async fn create_permission_request(
             let group = get_group_raw(&input.target_id, system)
                 .await?
                 .ok_or_else(|| {
-                    anyhow::anyhow!("Permission group not found: {}", input.target_id)
+                    super::GaugeServiceError::not_found("permission_group", &input.target_id)
                 })?;
             if let Some(service_user) = &on_behalf_of {
                 if service_user_in_group(v, &input.target_id, service_user).await? {
@@ -285,8 +285,22 @@ pub async fn create_permission_request(
         }
         None => None,
     };
+    let requestor_record = require_model_id(requestor.id(), "requestor")?;
+    if has_pending_duplicate(
+        &requestor_record,
+        &target_record,
+        on_behalf_of_record.as_ref(),
+        v,
+    )
+    .await?
+    {
+        return Err(super::GaugeServiceError::validation(
+            "A request for this access is already pending",
+        )
+        .into());
+    }
     let request = PermissionRequest::new(
-        require_model_id(requestor.id(), "requestor")?,
+        requestor_record,
         None,
         target_record,
         reason,
@@ -297,6 +311,51 @@ pub async fn create_permission_request(
     )?;
     let created = PermissionRequest::create(request, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Request** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     request_row_from_model(&created, v).await
+}
+
+/// `true` when `requestor` already has a pending request for the same target and the same
+/// `on_behalf_of` (both `None` for a plain user request).
+async fn has_pending_duplicate(
+    requestor: &RecordId,
+    target: &RecordId,
+    on_behalf_of: Option<&RecordId>,
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    let pending = PermissionRequest::query(v, valence::use_!(r"When a user **files an access request**, we **list their pending Permission Requests** to refuse a duplicate for the same target and service user. Only that check uses the list; nothing from it is shown."))
+        .where_requestor(valence::RecordPredicate::Equals(requestor.clone()))
+        .where_status(valence::StringPredicate::Equals("PENDING".to_string()))
+        .await?;
+    Ok(pending
+        .iter()
+        .any(|r| r.target() == target && r.on_behalf_of() == on_behalf_of))
+}
+
+/// List the pending access requests that name a service user, newest first, so the UI can show
+/// "requested" instead of offering the request again.
+///
+/// Only the service user's owner (or a manage-any holder) may ask, with the same refusal as
+/// [`create_permission_request`] for a service user the actor doesn't own.
+pub async fn list_pending_requests_for_service_user(
+    service_user: &str,
+    v: &Valence,
+) -> anyhow::Result<Vec<PermissionRequestRowDto>> {
+    require_user_id(v)?;
+    let service_user = resolve_owned_active_service_user(service_user, v).await?;
+    let principal = RecordId::new(
+        SERVICE_USER_PRINCIPAL_TABLE,
+        crate::service_users::service_user_principal_id(&service_user),
+    );
+    let rows = PermissionRequest::query(v, valence::use_!(r"When a bot's **owner opens its access page**, we **list the access requests still pending for that bot** so the page shows requested instead of offering the request again. Only the bot's owner (or someone who manages every service user) can see them."))
+        .where_status(valence::StringPredicate::Equals("PENDING".to_string()))
+        .where_on_behalf_of(valence::RecordPredicate::Equals(principal))
+        .order_by_created_at(valence::SortDirection::Desc)
+        .await?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        out.push(request_row_from_model(&row, v).await?);
+    }
+    Ok(out)
 }
 
 /// List the current actor's own access requests, newest first.
@@ -521,7 +580,7 @@ pub async fn list_history(
             other => other.to_string(),
         };
         let diffs = vec![HistoryDiffItemDto {
-            field: field.clone(),
+            field,
             old_value: if old_s.is_empty() {
                 serde_json::Value::Null
             } else {

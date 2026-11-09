@@ -145,6 +145,56 @@ async fn tm_gate_service_user_valence_denied_sad() {
 }
 
 #[tokio::test]
+async fn tm_gate_lookup_failure_reports_gauge_lookup_sad() {
+    let w = world().await;
+    w.set_reads_failing(true);
+    // Plain user, creator and super user alike: a failed lookup is an error, never an allow.
+    for id in ["bob", "alice", "carol"] {
+        let v = w.as_user(id);
+        let create = GaugeServiceUserGate
+            .may_create_service_user(&v)
+            .await
+            .expect_err("create lookup fails");
+        assert_eq!(create.reason_class, "gauge_lookup", "{id}");
+        let manage = GaugeServiceUserGate
+            .may_manage_any_service_user(&v)
+            .await
+            .expect_err("manage lookup fails");
+        assert_eq!(manage.reason_class, "gauge_lookup", "{id}");
+    }
+    w.set_reads_failing(false);
+    let before = raw_count(&w.system, "service_user_account").await;
+    // Lepton refuses the create while the gate cannot answer.
+    w.set_reads_failing(true);
+    let now = chrono::Utc::now();
+    let row = ServiceUserAccount::new(
+        Some(valence::RecordId::new("user", "alice")),
+        lepton::generated::ServiceUserAccountOwnerKind::User,
+        Some(valence::RecordId::new("user", "alice")),
+        "flaky".into(),
+        "flakybot".into(),
+        "Flaky".into(),
+        None,
+        lepton::generated::ServiceUserAccountStatus::Active,
+        None,
+        now,
+        now,
+    )
+    .expect("row");
+    let alice = w.as_user("alice");
+    let result = ServiceUserAccount::upsert(ServiceUserId::new_v4().as_str(), row, &alice, valence::use_!(r"**Test:** Fixture **service user** save attempt in gauge gate tests while Gauge lookups fail; Lepton must refuse. CI and developers running the suite only."))
+        .await;
+    w.set_reads_failing(false);
+    assert!(result.is_err(), "create must be refused while lookups fail");
+    assert_eq!(raw_count(&w.system, "service_user_account").await, before);
+    // Once lookups work again the same creator is allowed.
+    assert!(GaugeServiceUserGate
+        .may_create_service_user(&alice)
+        .await
+        .expect("gate"));
+}
+
+#[tokio::test]
 async fn tm_service_user_principal_delete_by_stranger_sad() {
     let w = world().await;
     let service_user = create_service_user(&w, "alice", "kept").await;

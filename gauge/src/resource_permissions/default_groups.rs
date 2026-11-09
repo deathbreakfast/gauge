@@ -349,6 +349,11 @@ impl ResourceKind {
 ///
 /// `kind` takes a [`ResourceKind`], a [`ResourceKindDescriptor`], or a reference to
 /// one, so a product that declares its own kind seeds it through this same call.
+///
+/// # Errors
+///
+/// [`ResourcePermissionError`] when `v` is not a System session, or when a
+/// group, permission or grant write fails.
 pub async fn seed_resource_kind_catalog(
     v: &Valence,
     kind: impl Into<ResourceKindDescriptor>,
@@ -357,7 +362,7 @@ pub async fn seed_resource_kind_catalog(
     create_perm_id: &str,
 ) -> Result<(), ResourcePermissionError> {
     let kind = kind.into();
-    crate::actor_guard::refuse_unattributed_writer(v, "seed_resource_kind_catalog")
+    crate::actor_guard::refuse_non_system_writer(v, "seed_resource_kind_catalog")
         .map_err(|e| map_err(kind.prefix, "", "seed_resource_kind_catalog", e))?;
     let label = kind.display_label;
     let system = as_system(v, &format!("seed_resource_kind_catalog:{label}"));

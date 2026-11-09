@@ -141,11 +141,11 @@ const GLUON_OPERATOR_GROUP_DEFS: &[(&str, &str, &str, &[&str])] = &[
 ///
 /// # Errors
 ///
-/// [`crate::service::GaugeServiceError::NotAuthorized`] when `v` belongs to a
-/// service user (such as a service user) or an anonymous caller; otherwise Valence
+/// [`crate::service::GaugeServiceError::NotAuthorized`] when `v` is not a
+/// System session; otherwise Valence
 /// failures while ensuring a group or grant.
 pub async fn ensure_gluon_default_operator_groups(v: &Valence) -> anyhow::Result<()> {
-    crate::actor_guard::refuse_unattributed_writer(v, "ensure_gluon_default_operator_groups")?;
+    crate::actor_guard::refuse_non_system_writer(v, "ensure_gluon_default_operator_groups")?;
     let system = as_system(v, "ensure_gluon_default_operator_groups");
 
     for (id, title, blurb, perms) in GLUON_OPERATOR_GROUP_DEFS {
