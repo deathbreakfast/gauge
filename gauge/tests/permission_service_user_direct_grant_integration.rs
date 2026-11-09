@@ -12,9 +12,10 @@ mod common;
 use gauge::actor_can_raw::actor_can_raw;
 use gauge::generated::Permission;
 use gauge::service::{
-    add_group_member_user, grant_permission_to_service_user_checked, list_history,
-    revoke_permission_from_service_user, GaugeServiceError,
+    add_group_member_user, add_group_owner_user, grant_permission_to_service_user_checked,
+    list_history, revoke_permission_from_service_user, GaugeServiceError,
 };
+use gauge::service_users::SERVICE_USER_CREATORS_GROUP_ID;
 use gauge::super_user::SUPER_USER_GROUP_ID;
 use lepton_identity::service_users::ServiceUserId;
 use service_users_fixtures::{create_service_user, raw_count, world, World, READ};
@@ -28,16 +29,24 @@ async fn world_with_super_alice() -> World {
     add_group_member_user(SUPER_USER_GROUP_ID, "alice", &w.as_user("carol"))
         .await
         .expect("alice becomes a super user");
+    add_group_member_user(SERVICE_USER_CREATORS_GROUP_ID, "bob", &w.as_user("carol"))
+        .await
+        .expect("bob may create service users");
     w
 }
 
-async fn read_permission_id(w: &World) -> String {
+async fn read_permission(w: &World) -> Permission {
     Permission::query(&w.system, valence::use_!(r"**Test:** Fixture **permission** lookup in the direct service user grant tests to find the readers permission id. CI and developers running the suite only."))
         .where_name(StringPredicate::Equals(READ.into()))
         .first()
         .await
         .unwrap()
         .unwrap()
+}
+
+async fn read_permission_id(w: &World) -> String {
+    read_permission(w)
+        .await
         .id()
         .and_then(|r| valence::extract_id_from_record(r).ok())
         .unwrap()
@@ -49,19 +58,29 @@ async fn holds(w: &World, service_user: &ServiceUserId) -> bool {
         .expect("actor_can_raw")
 }
 
-async fn actions(w: &World, permission_id: &str) -> Vec<String> {
-    let mut rows = list_history(
+/// Grant/revoke history for the permission, sorted (history timestamps can tie): `"grant"` or `"revoke"` per row.
+async fn actions(w: &World, permission_id: &str) -> Vec<&'static str> {
+    let rows = list_history(
         &w.as_user("alice"),
         Some("permission".to_string()),
         Some(permission_id.to_string()),
     )
     .await
     .expect("history");
-    rows.sort_by(|a, b| a.changed_at.cmp(&b.changed_at));
-    rows.into_iter()
-        .map(|r| r.action)
-        .filter(|a| a.ends_with("_service_user"))
-        .collect()
+    let mut out: Vec<&'static str> = rows
+        .into_iter()
+        .flat_map(|r| r.diffs)
+        .filter(|d| d.field == "granted_service_users")
+        .map(|d| {
+            if d.new_value.is_null() {
+                "revoke"
+            } else {
+                "grant"
+            }
+        })
+        .collect();
+    out.sort_unstable();
+    out
 }
 
 #[tokio::test]
@@ -85,22 +104,25 @@ async fn owner_grants_then_revokes_visible_service_user_happy() {
         .expect("revoke");
     assert!(!holds(&w, &su).await);
 
-    assert_eq!(
-        actions(&w, &id).await,
-        vec!["grant_service_user", "revoke_service_user"]
-    );
+    assert_eq!(actions(&w, &id).await, vec!["grant", "revoke"]);
 }
 
 #[tokio::test]
 async fn grant_to_service_user_caller_cannot_see_is_not_found_sad() {
     let w = world_with_super_alice().await;
     let id = read_permission_id(&w).await;
+    // dave owns the permission's owners group but isn't a super user, so he can edit the
+    // permission without seeing bob's service user.
+    let owners = valence::extract_id_from_record(read_permission(&w).await.owners_group()).unwrap();
+    add_group_owner_user(&owners, "dave", &w.as_user("carol"))
+        .await
+        .expect("dave owns the permission");
     let su = create_service_user(&w, "bob", "bobs-bot").await;
     let principals = raw_count(&w.system, PRINCIPALS).await;
 
-    let err = grant_permission_to_service_user_checked(&id, &su, &w.as_user("alice"))
+    let err = grant_permission_to_service_user_checked(&id, &su, &w.as_user("dave"))
         .await
-        .expect_err("alice can't see bob's service user");
+        .expect_err("dave can't see bob's service user");
 
     assert!(matches!(
         err.downcast_ref::<GaugeServiceError>(),
@@ -137,7 +159,7 @@ async fn caller_who_cannot_edit_permission_is_not_authorized_sad() {
     }
     assert!(!holds(&w, &bobs).await);
     assert!(holds(&w, &mine).await);
-    assert_eq!(actions(&w, &id).await, vec!["grant_service_user"]);
+    assert_eq!(actions(&w, &id).await, vec!["grant"]);
 }
 
 #[tokio::test]
