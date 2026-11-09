@@ -59,6 +59,26 @@ pub fn require_model_id(
     })
 }
 
+/// Write the first owner edge of a row the actor just created.
+///
+/// The generated `relate_to_owner_record` checks the row's Update policy, which is owner
+/// based and so refuses the creator before any owner exists. The raw edge write skips that
+/// check; the actor's Create policy already admitted the row, and the actor stays the
+/// session actor throughout.
+///
+/// Callers must pass only a row they created in the same call. It does no Update check, so
+/// using it on an existing group or domain would add owners without authorization.
+pub(super) async fn relate_first_owner(
+    v: &Valence,
+    edge_table: &str,
+    row: &RecordId,
+    principal: &RecordId,
+    purpose: valence::DataUsePurpose,
+) -> anyhow::Result<()> {
+    v.relate_edge(edge_table, row, principal, purpose).await?;
+    Ok(())
+}
+
 /// Whether `principal` is already a member of `group`. Used to skip a redundant edge write
 /// (and the history row that follows it) when an add changes nothing.
 pub async fn group_has_member_principal(
@@ -507,9 +527,14 @@ pub async fn resolve_or_create_default_owner_group(
     let created = PermissionGroup::upsert(&group_id, group, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     if let Some(user) = get_user_by_actor_id(user_id, system).await? {
         let principal = ensure_user_principal(&record_pk_id(user.id()), system).await?;
-        created
-            .relate_to_owner_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."))
-            .await?;
+        relate_first_owner(
+            system,
+            "permission_group_owner_principal",
+            &require_model_id(created.id(), "group")?,
+            &require_model_id(principal.id(), "principal")?,
+            valence::use_!(r"When an operator **adds a group owner** in **Gauge**, we **write the owner edge** from the permission group to that principal so later checks know who can approve and edit. Operators see the updated owners on the group detail."),
+        )
+        .await?;
         let principal = ensure_user_principal(&record_pk_id(user.id()), system).await?;
         created
             .relate_to_member_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **adds a group member** in **Gauge**, we **write the member edge** so that principal inherits the group's grants. Operators see the updated members on the group detail."))

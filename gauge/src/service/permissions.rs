@@ -173,38 +173,85 @@ pub async fn grant_permission_to_user(
     Ok(())
 }
 
-/// Grant `permission_id` directly to `service_user` (owner or super-user of the permission).
+/// Grant `permission_id` directly to `service_user`, checking that the caller can see it.
 ///
-/// Mirrors [`grant_permission_to_user`] for a service user: it writes an allowed-principal edge
-/// to the service user's principal, which [`crate::service::actor_can`] then honours while the
-/// service user is active. Used by the approve path for a permission request filed on behalf of
-/// a service user. The caller stays the session actor — never `Actor::System`.
-///
-/// Not re-exported: unlike [`super::add_group_member_service_user`] it doesn't check that the
-/// caller can see the service user, because the approved request carries the owner's consent.
+/// The caller must be able to edit the permission (owner or super-user) **and** see the service
+/// user under their own Valence: its owner, or a user who manages every service user. The edge
+/// is an allowed-principal edge to the service user's principal, which
+/// [`crate::service::actor_can`] honours while the service user is active. Granting a permission
+/// the service user already holds changes nothing. The caller stays the session actor, never
+/// `Actor::System`.
 ///
 /// # Errors
 ///
 /// [`GaugeServiceError`](super::GaugeServiceError): `NotAuthorized` when the caller can't edit
-/// the permission. Valence failures otherwise.
-pub async fn grant_permission_to_service_user(
+/// the permission; `NotFound` for a service user the caller can't see. Valence failures
+/// otherwise.
+pub async fn grant_permission_to_service_user_checked(
     permission_id: &str,
     service_user: &lepton_identity::service_users::ServiceUserId,
     v: &Valence,
 ) -> anyhow::Result<()> {
     let actor_user_id = require_user_id(v)?;
-    let system = v;
-    let permission = get_permission_raw(permission_id, system)
+    let permission = get_permission_raw(permission_id, v)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Permission not found: {permission_id}"))?;
     if !can_edit_permission(&permission, v).await? {
         return Err(super::GaugeServiceError::not_authorized("edit permission").into());
     }
+    if !super::service_user_members::actor_can_see_service_user(service_user, v).await? {
+        return Err(
+            super::GaugeServiceError::not_found("service_user", service_user.as_str()).into(),
+        );
+    }
+    relate_permission_to_service_user(&permission, permission_id, service_user, actor_user_id, v)
+        .await
+}
 
+/// Grant `permission_id` directly to `service_user` on behalf of an approved access request.
+///
+/// Like [`grant_permission_to_service_user_checked`] but **without** the service-user visibility
+/// check: the approved request carries the owner's consent (given when the owner filed it), and
+/// the caller is the permission's maintainer. The caller stays the session actor, never
+/// `Actor::System`. Not re-exported.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError): `NotAuthorized` when the caller can't edit
+/// the permission. Valence failures otherwise.
+pub async fn grant_permission_to_service_user_approved(
+    permission_id: &str,
+    service_user: &lepton_identity::service_users::ServiceUserId,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    let actor_user_id = require_user_id(v)?;
+    let permission = get_permission_raw(permission_id, v)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Permission not found: {permission_id}"))?;
+    if !can_edit_permission(&permission, v).await? {
+        return Err(super::GaugeServiceError::not_authorized("edit permission").into());
+    }
+    relate_permission_to_service_user(&permission, permission_id, service_user, actor_user_id, v)
+        .await
+}
+
+/// Shared write path: ensure the principal row, write the allowed-principal edge and record
+/// history. Callers authorize and establish consent first.
+async fn relate_permission_to_service_user(
+    permission: &Permission,
+    permission_id: &str,
+    service_user: &lepton_identity::service_users::ServiceUserId,
+    actor_user_id: String,
+    v: &Valence,
+) -> anyhow::Result<()> {
     let principal =
-        super::service_user_members::ensure_service_user_principal(service_user, system).await?;
+        super::service_user_members::ensure_service_user_principal(service_user, v).await?;
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    if permission_has_allowed_principal(permission, &principal_id, v).await? {
+        return Ok(());
+    }
     permission
-        .relate_to_allowed_principal_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **grants a permission to a service user** in **Gauge**, we **write the allowed-principal edge** so the service user may use the permission while it is active. Operators see the updated allow list on the permission detail."))
+        .relate_to_allowed_principal_record(&principal_id, v, valence::use_!(r"When an operator **grants a permission to a service user** in **Gauge**, we **write the allowed-principal edge** so the service user may use the permission while it is active. Operators see the updated allow list on the permission detail."))
         .await?;
     persist_history_entry(
         v,
@@ -216,6 +263,69 @@ pub async fn grant_permission_to_service_user(
             field: "granted_service_users".to_string(),
             old_value: serde_json::Value::Null,
             new_value: serde_json::Value::String(service_user.as_str().to_string()),
+        }],
+    )
+    .await?;
+    Ok(())
+}
+
+async fn permission_has_allowed_principal(
+    permission: &Permission,
+    principal: &RecordId,
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    Ok(permission
+        .get_allowed_principals_record_ids(v, valence::use_!(r"When **Gauge** checks or shows **who holds a permission**, we **follow the allowed-principal edges** so the product can build the allow list or decide whether you already have access. Editors see that list; permission checks use it only to allow or deny."))
+        .await?
+        .iter()
+        .any(|p| p == principal))
+}
+
+/// Revoke `permission_id` from `service_user` (owner or super-user of the permission).
+///
+/// Seeing the service user isn't required, so a permission owner can always remove a grant
+/// someone else made. Revoking a permission the service user doesn't hold is a no-op: it returns
+/// `Ok(())` and writes no history row.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError): `NotAuthorized` when the caller can't edit
+/// the permission. Valence failures otherwise.
+pub async fn revoke_permission_from_service_user(
+    permission_id: &str,
+    service_user: &lepton_identity::service_users::ServiceUserId,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    let actor_user_id = require_user_id(v)?;
+    let permission = get_permission_raw(permission_id, v)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Permission not found: {permission_id}"))?;
+    if !can_edit_permission(&permission, v).await? {
+        return Err(super::GaugeServiceError::not_authorized("edit permission").into());
+    }
+
+    let Some(principal) =
+        super::service_user_members::get_service_user_principal_raw(service_user, v).await?
+    else {
+        return Ok(());
+    };
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    if !permission_has_allowed_principal(&permission, &principal_id, v).await? {
+        return Ok(());
+    }
+    permission
+        .unrelate_from_allowed_principal_record(&principal_id, v, valence::use_!(r"When an operator **revokes a permission from a service user** in **Gauge**, we **delete the allowed-principal edge** so the service user no longer holds the grant. Operators see the updated allow list on the permission detail."))
+        .await?;
+    persist_history_entry(
+        v,
+        "permission",
+        permission_id.to_string(),
+        "revoke_service_user",
+        Some(actor_user_id),
+        vec![HistoryDiffItemDto {
+            field: "granted_service_users".to_string(),
+            old_value: serde_json::Value::String(service_user.as_str().to_string()),
+            new_value: serde_json::Value::Null,
         }],
     )
     .await?;

@@ -10,6 +10,9 @@ ignore = [
     "RUSTSEC-2026-0387",
     # reblessive unsound Send/Sync: surrealdb-core query executor; no fixed release upstream.
     "RUSTSEC-2026-0454",
+    # libsqlite3-sys 0.30 bundled SQLite: uf-valence-backend-sqlite -> sqlx 0.8.6 pins ^0.30;
+    # fix needs >=0.39, blocked until sqlx/valence upgrade (mirrors deny.toml).
+    "RUSTSEC-2026-0459",
     # pin-utils unmaintained: surrealdb -> wasmtimer, dev-dependency only.
     "RUSTSEC-2026-0441",
     # Unmaintained, no replacement upstream; mirrors deny.toml's ignores so

@@ -117,6 +117,102 @@ pub const SUPER_USER_GROUP_MEMBER: SuperUserGroupMember = SuperUserGroupMember;
 pub const REQUEST_NAMED_SERVICE_USER_PRINCIPAL: RequestNamedServiceUserPrincipal =
     RequestNamedServiceUserPrincipal;
 
+/// Shared [`HistoryAppend`] instance for the permission-history create policy.
+pub const HISTORY_APPEND: HistoryAppend = HistoryAppend;
+
+/// How long after a group is created its `created` history entry is still accepted without
+/// an owner edge.
+const NEW_GROUP_HISTORY_WINDOW: chrono::Duration = chrono::Duration::seconds(30);
+
+/// Allow a history row to be appended when the actor could update its source.
+///
+/// A group's own `created` entry is also allowed when it is attributed to the actor, the
+/// group has no owner yet and was created within [`NEW_GROUP_HISTORY_WINDOW`].
+///
+/// `defer_to_edge` evaluates the source's Update policy, and a group's creation history is
+/// written inside `PermissionGroup::create`, before the creator's owner edge exists. The
+/// creator is therefore not yet an owner; the ownerless exception covers that one entry and
+/// closes as soon as the first owner edge is written.
+#[derive(Debug, Clone)]
+pub struct HistoryAppend;
+
+#[async_trait]
+impl PolicyEvaluator for HistoryAppend {
+    fn name(&self) -> &'static str {
+        "perm::HISTORY_APPEND"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Allow history create when the actor can update the source, or logs a new group's creation")
+    }
+
+    async fn evaluate(
+        &self,
+        op: PrivacyOperation,
+        record: &serde_json::Value,
+        actor: &dyn ActorContext,
+        v: &Valence,
+    ) -> valence::Result<bool> {
+        let actor = actor_from_context(actor)?;
+        if actor.is_system() {
+            return Ok(true);
+        }
+        if !matches!(op, PrivacyOperation::Create) {
+            return Ok(false);
+        }
+        let Some((table, id)) = record.get("source").and_then(target_table_and_id) else {
+            return Ok(false);
+        };
+        let source = serde_json::json!({ "id": format!("{table}:{id}") });
+        match table.as_str() {
+            "permission_group" => {
+                if group_owner_recursive(PrivacyOperation::Update, &source, &actor, v).await? {
+                    return Ok(true);
+                }
+                let candidates = actor_candidates(&actor);
+                let by_actor = record
+                    .get("actor")
+                    .and_then(target_table_and_id)
+                    .is_some_and(|(_, row_actor)| candidates.contains(&row_actor));
+                let creating = by_actor
+                    && record.get("field_name").and_then(|f| f.as_str()) == Some("created");
+                if !creating {
+                    return Ok(false);
+                }
+                let Some(row) = raw_get_json("permission_group", &id, v)
+                    .await
+                    .map_err(|e| {
+                        Error::Privacy(format!("Policy lookup failed for group {id}: {e}"))
+                    })?
+                else {
+                    return Ok(false);
+                };
+                let group: PermissionGroup = serde_json::from_value(row).map_err(|e| {
+                    Error::Privacy(format!("Policy group decode failed for {id}: {e}"))
+                })?;
+                let age = chrono::Utc::now().signed_duration_since(*group.created_at());
+                if age > NEW_GROUP_HISTORY_WINDOW {
+                    return Ok(false);
+                }
+                group_has_no_owner(&group, v).await.map_err(|e| {
+                    Error::Privacy(format!("Policy owner lookup failed for group {id}: {e}"))
+                })
+            }
+            "permission" => {
+                permission_owner_recursive(PrivacyOperation::Update, &source, &actor, v).await
+            }
+            "permission_domain" => {
+                domain_owner_recursive(PrivacyOperation::Update, &source, &actor, v).await
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Allow permission-request **update** (decide) when the actor maintains the request target.
 #[derive(Debug, Clone)]
 pub struct RequestTargetMaintainer;
@@ -518,6 +614,13 @@ async fn group_owner_recursive(
     group_has_recursive_owner(&group, &user_ids, v)
         .await
         .map_err(|e| Error::Privacy(format!("Policy recursion failed for group {group_id}: {e}")))
+}
+
+async fn group_has_no_owner(group: &PermissionGroup, v: &Valence) -> anyhow::Result<bool> {
+    let owners = group
+        .get_owners_record_ids(v, valence::use_!(r"When **Gauge** checks whether a **new permission group has an owner yet**, we **follow its owner edges** so only the creator's first history entry is accepted. Nobody sees this check; it only allows or denies the write."))
+        .await?;
+    Ok(owners.is_empty())
 }
 
 async fn domain_owner_recursive(
