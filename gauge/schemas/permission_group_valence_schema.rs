@@ -8,7 +8,7 @@ valence_schema! {
     PermissionGroup {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_group",
-        version: "0.1.0",
+        version: "0.1.1",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Permission user group with owner and member relationships",
 
