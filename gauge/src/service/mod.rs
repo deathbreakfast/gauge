@@ -10,6 +10,8 @@
 //! - Principal graph management (users/groups, nested membership, owners), plus
 //!   service users as group members; owner-only group creation and clearing
 //!   every member of a group in one call.
+//! - Direct permission grants and revokes for service users, gated on the caller seeing the
+//!   service user (grant) and editing the permission.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
 //! - Permission request workflow (create/list/review/decide), including requests for a
 //!   service user and a lookup of the ones still pending.
@@ -55,8 +57,9 @@ pub use groups::{
 pub(crate) use helpers::raw_table_rows;
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
-    grant_permission_to_group, grant_permission_to_user, list_groups, list_permissions,
-    revoke_permission_from_group, revoke_permission_from_user, update_permission,
+    grant_permission_to_group, grant_permission_to_service_user_checked, grant_permission_to_user,
+    list_groups, list_permissions, revoke_permission_from_group,
+    revoke_permission_from_service_user, revoke_permission_from_user, update_permission,
 };
 pub use requests::{
     actor_can_view_history_subject, create_permission_request, decide_permission_request,
