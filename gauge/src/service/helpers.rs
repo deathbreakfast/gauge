@@ -65,7 +65,10 @@ pub fn require_model_id(
 /// based and so refuses the creator before any owner exists. The raw edge write skips that
 /// check; the actor's Create policy already admitted the row, and the actor stays the
 /// session actor throughout.
-pub async fn relate_first_owner(
+///
+/// Callers must pass only a row they created in the same call. It does no Update check, so
+/// using it on an existing group or domain would add owners without authorization.
+pub(super) async fn relate_first_owner(
     v: &Valence,
     edge_table: &str,
     row: &RecordId,

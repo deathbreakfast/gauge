@@ -120,8 +120,14 @@ pub const REQUEST_NAMED_SERVICE_USER_PRINCIPAL: RequestNamedServiceUserPrincipal
 /// Shared [`HistoryAppend`] instance for the permission-history create policy.
 pub const HISTORY_APPEND: HistoryAppend = HistoryAppend;
 
-/// Allow a history row to be appended when the actor could update its source, or when the
-/// row is the `created` entry for a group that has no owner yet.
+/// How long after a group is created its `created` history entry is still accepted without
+/// an owner edge.
+const NEW_GROUP_HISTORY_WINDOW: chrono::Duration = chrono::Duration::seconds(30);
+
+/// Allow a history row to be appended when the actor could update its source.
+///
+/// A group's own `created` entry is also allowed when it is attributed to the actor, the
+/// group has no owner yet and was created within [`NEW_GROUP_HISTORY_WINDOW`].
 ///
 /// `defer_to_edge` evaluates the source's Update policy, and a group's creation history is
 /// written inside `PermissionGroup::create`, before the creator's owner edge exists. The
@@ -163,8 +169,13 @@ impl PolicyEvaluator for HistoryAppend {
                 if group_owner_recursive(PrivacyOperation::Update, &source, &actor, v).await? {
                     return Ok(true);
                 }
-                let creating = record.get("field_name").and_then(|f| f.as_str()) == Some("created")
-                    && !actor_candidates(&actor).is_empty();
+                let candidates = actor_candidates(&actor);
+                let by_actor = record
+                    .get("actor")
+                    .and_then(target_table_and_id)
+                    .is_some_and(|(_, row_actor)| candidates.contains(&row_actor));
+                let creating = by_actor
+                    && record.get("field_name").and_then(|f| f.as_str()) == Some("created");
                 if !creating {
                     return Ok(false);
                 }
@@ -179,6 +190,10 @@ impl PolicyEvaluator for HistoryAppend {
                 let group: PermissionGroup = serde_json::from_value(row).map_err(|e| {
                     Error::Privacy(format!("Policy group decode failed for {id}: {e}"))
                 })?;
+                let age = chrono::Utc::now().signed_duration_since(*group.created_at());
+                if age > NEW_GROUP_HISTORY_WINDOW {
+                    return Ok(false);
+                }
                 group_has_no_owner(&group, v).await.map_err(|e| {
                     Error::Privacy(format!("Policy owner lookup failed for group {id}: {e}"))
                 })
