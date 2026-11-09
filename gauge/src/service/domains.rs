@@ -9,7 +9,7 @@ use super::access::can_edit_domain;
 use super::helpers::{
     domain_has_owner_user, ensure_user_principal, get_domain_raw, get_user_by_actor_id,
     principal_ref_from_record, raw_table_rows, record_pk_id, redact_user_principal_label,
-    require_model_id, require_user_id, user_id_candidates,
+    relate_first_owner, require_model_id, require_user_id, user_id_candidates,
 };
 
 fn domain_to_list_detail(domain: &PermissionDomain) -> PermissionDomainDetailDto {
@@ -49,9 +49,14 @@ pub async fn create_domain(
     if let Some(user) = get_user_by_actor_id(&actor_user_id, lookup).await? {
         let principal = ensure_user_principal(&record_pk_id(user.id()), lookup).await?;
         let principal_id = require_model_id(principal.id(), "principal")?;
-        created
-            .relate_to_owner_record(&principal_id, lookup, valence::use_!(r"When an operator **creates a permission domain** in **Gauge**, we **write the owner edge** from the domain to that principal so later checks know who can rename and delete it. Operators see the updated owners on the domain detail."))
-            .await?;
+        relate_first_owner(
+            lookup,
+            "permission_domain_owner_principal",
+            &require_model_id(created.id(), "domain")?,
+            &principal_id,
+            valence::use_!(r"When an operator **creates a permission domain** in **Gauge**, we **write the owner edge** from the domain to that principal so later checks know who can rename and delete it. Operators see the updated owners on the domain detail."),
+        )
+        .await?;
     }
 
     Ok(created)

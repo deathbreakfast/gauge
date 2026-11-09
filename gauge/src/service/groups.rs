@@ -8,7 +8,8 @@ use crate::types::{HistoryDiffItemDto, PermissionGroupCreateInput};
 use super::helpers::{
     ensure_group_principal, ensure_user_principal, get_group_raw, get_user_by_actor_id,
     group_has_member_principal, group_has_owner_principal, group_has_owner_user, groups_named,
-    persist_history_entry, record_pk_id, require_model_id, require_user_id, user_id_candidates,
+    persist_history_entry, record_pk_id, relate_first_owner, require_model_id, require_user_id,
+    user_id_candidates,
 };
 
 /// Which edges the creator gets on a group they create.
@@ -129,9 +130,14 @@ async fn create_group_with(
     let created = PermissionGroup::create(group, system, valence::use_!(r"When a **permission group is created** in **Gauge**, we **save the group's name and description and when it was created** so it can own permissions and receive grants. Owners and operators see the group on its detail page in group management.")).await?;
 
     if let Some(principal_id) = principal_id {
-        created
-            .relate_to_owner_record(&principal_id, system, valence::use_!(r"When a **permission group is created** in **Gauge**, we **write an owner edge** from the new group to its creator so the creator can edit it and approve requests for it. Owners see themselves on the group detail."))
-            .await?;
+        relate_first_owner(
+            system,
+            "permission_group_owner_principal",
+            &require_model_id(created.id(), "group")?,
+            &principal_id,
+            valence::use_!(r"When a **permission group is created** in **Gauge**, we **write an owner edge** from the new group to its creator so the creator can edit it and approve requests for it. Owners see themselves on the group detail."),
+        )
+        .await?;
         if mode == CreateMode::OwnerAndMember {
             created
                 .relate_to_member_record(&principal_id, system, valence::use_!(r"When a **permission group is created** with its creator as a member, we **write a member edge** from the new group to the creator so they inherit what the group holds. Members see the group on the group detail."))
