@@ -26,7 +26,7 @@ use super::helpers::{
     get_group_raw, get_permission_raw, get_request_raw, get_user_by_actor_id, group_has_user,
     map_request_status, record_pk_id, require_model_id, require_user_id, user_id_candidates,
 };
-use super::permissions::{grant_permission_to_service_user, grant_permission_to_user};
+use super::permissions::{grant_permission_to_service_user_approved, grant_permission_to_user};
 use super::service_user_members::{
     add_group_member_service_user_via_request, ensure_service_user_principal,
 };
@@ -501,7 +501,7 @@ pub async fn decide_permission_request(
         match request_target_kind_from_record(target) {
             Some(PermissionRequestTargetKind::Permission) => match &on_behalf_of {
                 Some(service_user) => {
-                    grant_permission_to_service_user(&target_id, service_user, v).await?;
+                    grant_permission_to_service_user_approved(&target_id, service_user, v).await?;
                 }
                 None => grant_permission_to_user(&target_id, &requestor_user_id, v).await?,
             },

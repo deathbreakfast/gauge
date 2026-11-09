@@ -52,7 +52,7 @@ pub async fn ensure_service_user_principal(
         })
 }
 
-async fn get_service_user_principal_raw(
+pub(super) async fn get_service_user_principal_raw(
     service_user: &ServiceUserId,
     v: &Valence,
 ) -> anyhow::Result<Option<PermissionServiceUserPrincipal>> {
@@ -66,6 +66,17 @@ async fn get_service_user_principal_raw(
         Some(row) => Ok(Some(serde_json::from_value(row)?)),
         None => Ok(None),
     }
+}
+
+/// Whether the caller can see `service_user` under their own Valence: its owner, or a user who
+/// manages every service user.
+pub(super) async fn actor_can_see_service_user(
+    service_user: &ServiceUserId,
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    Ok(lepton::generated::ServiceUserAccount::get(service_user.as_str(), v, valence::use_!(r"When an operator **grants a permission to a service user**, we **check that they can see the service user**, meaning they own it or manage every service user. Nothing about the service user is shown here; the check only decides whether the grant may go ahead."))
+        .await?
+        .is_some())
 }
 
 /// Whether the caller may add service users to `group_id` with [`add_group_member_service_user`].
