@@ -6,10 +6,10 @@ use crate::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID, SUPER_USER_GRO
 use crate::types::{HistoryDiffItemDto, PermissionGroupCreateInput};
 
 use super::helpers::{
-    ensure_group_principal, ensure_user_principal, get_group_raw, get_user_by_actor_id,
-    group_has_member_principal, group_has_owner_principal, group_has_owner_user, groups_named,
-    persist_history_entry, record_pk_id, relate_first_owner, require_model_id, require_user_id,
-    user_id_candidates,
+    canonical_user_id, ensure_group_principal, ensure_user_principal, get_group_principal_raw,
+    get_group_raw, get_user_by_actor_id, group_has_member_principal, group_has_owner_principal,
+    group_has_owner_user, group_principal_id, groups_named, persist_history_entry, record_pk_id,
+    relate_first_owner, require_model_id, require_user_id, require_writer_id, user_id_candidates,
 };
 
 /// Which edges the creator gets on a group they create.
@@ -23,11 +23,17 @@ enum CreateMode {
 ///
 /// To own a group without belonging to it, use [`create_group_owner_only`].
 ///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
+/// System has no user row, so a group it creates here has no owner; use
+/// [`create_managed_group`] to name one.
+///
 /// # Errors
 ///
 /// [`GaugeServiceError`](super::GaugeServiceError) (via `anyhow`): `Validation` for an
 /// empty name, the reserved Super User group name, or a name that already exists. A caller
-/// that isn't a signed-in user is refused. Valence failures otherwise.
+/// that is neither a signed-in user nor System is refused. Valence failures otherwise.
 pub async fn create_group(
     input: PermissionGroupCreateInput,
     v: &Valence,
@@ -45,6 +51,9 @@ pub async fn create_group(
 /// members. Gauge treats an owner as holding what the group holds, so the caller keeps the
 /// group's grants; only the member listing differs.
 ///
+/// Under [`valence::Actor::System`] this returns `NotAuthorized`, since System has no user
+/// record to own the group; use [`create_managed_group`] with an `owner_user` instead.
+///
 /// ```ignore
 /// let group = service::create_group_owner_only(input, &v).await?;
 /// service::add_group_member_user(&id, "alice", &v).await?;
@@ -56,8 +65,8 @@ pub async fn create_group(
 ///
 /// [`GaugeServiceError`](super::GaugeServiceError) (via `anyhow`):
 ///
-/// - `NotAuthorized`: the caller has no user record to own the group with (a service user,
-///   say). Nothing is saved.
+/// - `NotAuthorized`: the caller has no user record to own the group with (a service user or
+///   System, say). Nothing is saved.
 /// - `Validation`: an empty, reserved or already used name, as for [`create_group`].
 /// - A caller that isn't a signed-in user is refused before anything is saved.
 pub async fn create_group_owner_only(
@@ -95,7 +104,7 @@ async fn create_group_with(
     mode: CreateMode,
     v: &Valence,
 ) -> anyhow::Result<PermissionGroup> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let system = v;
     let name = input.name.trim().to_string();
     if name.is_empty() {
@@ -148,15 +157,131 @@ async fn create_group_with(
     Ok(created)
 }
 
+/// Create a group with a caller-chosen `id`, owned by `owner_user`, or by the session user
+/// when `owner_user` is `None`.
+///
+/// Use this when a host or job manages a group under a stable id it can look up later, for
+/// example a team's group created at boot. The group starts with one owner and no members.
+/// If a group with `id` already exists it is returned as is, so a job can call this on every
+/// run; the name, description and owners of the existing group are left alone.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
+/// A System caller must name `owner_user`. A session caller can name only themselves unless
+/// they are a super user.
+///
+/// ```ignore
+/// let group = service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system).await?;
+/// // Running it again returns the same group and changes nothing.
+/// service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system).await?;
+/// ```
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError) (via `anyhow`):
+///
+/// - `Validation`: an empty id or name, the Super User group id or name, a name already used
+///   by a group with a different id, or a System caller with no `owner_user`.
+/// - `NotAuthorized`: a session caller who isn't a super user names someone else as owner.
+/// - `NotFound`: `owner_user` (or the session user) has no user record. Nothing is saved.
+/// - A caller that is neither a signed-in user nor System is refused. Valence failures
+///   otherwise.
+pub async fn create_managed_group(
+    id: &str,
+    name: &str,
+    description: &str,
+    owner_user: Option<&str>,
+    v: &Valence,
+) -> anyhow::Result<PermissionGroup> {
+    let actor_user_id = require_writer_id(v)?;
+    let id = id.trim();
+    let name = name.trim();
+    if id.is_empty() || name.is_empty() {
+        return Err(super::GaugeServiceError::validation("Group id and name are required").into());
+    }
+    if id == SUPER_USER_GROUP_ID || name == SUPER_USER_GROUP_NAME {
+        return Err(super::GaugeServiceError::validation(format!(
+            "Group id '{SUPER_USER_GROUP_ID}' and name '{SUPER_USER_GROUP_NAME}' are reserved for the well-known super-user group"
+        ))
+        .into());
+    }
+    if let Some(existing) = get_group_raw(id, v).await? {
+        return Ok(existing);
+    }
+    if groups_named(name, v)
+        .await?
+        .iter()
+        .any(|g| record_pk_id(g.id()) != id)
+    {
+        return Err(super::GaugeServiceError::validation(format!(
+            "Permission group name already exists: {name}"
+        ))
+        .into());
+    }
+
+    let is_system = v.actor().is_system();
+    let owner = match owner_user {
+        Some(owner) => owner.to_string(),
+        None if is_system => {
+            return Err(super::GaugeServiceError::validation(
+                "owner_user is required when System creates a managed group",
+            )
+            .into())
+        }
+        None => actor_user_id.clone(),
+    };
+    if !is_system
+        && canonical_user_id(&owner) != canonical_user_id(&actor_user_id)
+        && !actor_is_super_user(v).await?
+    {
+        return Err(super::GaugeServiceError::not_authorized(
+            "create a group owned by another user",
+        )
+        .into());
+    }
+    let owner_row = get_user_by_actor_id(&owner, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("user", &owner))?;
+    let principal = ensure_user_principal(&record_pk_id(owner_row.id()), v).await?;
+    let principal_id = require_model_id(principal.id(), "principal")?;
+
+    let now = Utc::now();
+    let group = PermissionGroup::new(
+        name.to_string(),
+        if description.trim().is_empty() {
+            None
+        } else {
+            Some(description.to_string())
+        },
+        now,
+        now,
+    )?;
+    let created = PermissionGroup::upsert(id, group, v, valence::use_!(r"When a **managed permission group is created** in **Gauge**, we **save the group's chosen id, name and description and when it was created** so a host or job can find it again by id. Owners and operators see the group on its detail page in group management.")).await?;
+    relate_first_owner(
+        v,
+        "permission_group_owner_principal",
+        &require_model_id(created.id(), "group")?,
+        &principal_id,
+        valence::use_!(r"When a **managed permission group is created** in **Gauge**, we **write an owner edge** from the new group to the named owner so they can edit it and approve requests for it. Owners see themselves on the group detail."),
+    )
+    .await?;
+    Ok(created)
+}
+
 /// Update a group's name/description (owner or super-user only) and record history
 /// for any changed fields.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
 pub async fn update_group(
     id: &str,
     name: String,
     description: String,
     v: &Valence,
 ) -> anyhow::Result<PermissionGroup> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
     let existing = get_group_raw(id, system)
@@ -224,12 +349,16 @@ pub async fn delete_group(id: &str, v: &Valence) -> anyhow::Result<()> {
 }
 
 /// Add `user_id` as an owner of `group_id` (owner or super-user only) and record history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
 pub async fn add_group_owner_user(
     group_id: &str,
     user_id: &str,
     v: &Valence,
 ) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
     let group = get_group_raw(group_id, system)
@@ -267,12 +396,16 @@ pub async fn add_group_owner_user(
 
 /// Remove `user_id` as an owner of `group_id` (owner or super-user only); fails if
 /// it would remove the group's last owner. Records history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
 pub async fn remove_group_owner_user(
     group_id: &str,
     user_id: &str,
     v: &Valence,
 ) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
     let group = get_group_raw(group_id, system)
@@ -324,13 +457,142 @@ pub async fn remove_group_owner_user(
     Ok(())
 }
 
+/// Add `owner_group_id` as an owner of `group_id` (owner or super-user only).
+///
+/// Everyone who owns `owner_group_id` (directly or through further groups) can then edit
+/// `group_id`. Adding an owner group that already owns the group changes nothing. Records
+/// history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError) (via `anyhow`): `NotFound` for a missing
+/// group or owner group; `NotAuthorized` when the caller doesn't own `group_id` and isn't a
+/// super user; `Validation` when `group_id == owner_group_id`. Valence failures otherwise.
+pub async fn add_group_owner_group(
+    group_id: &str,
+    owner_group_id: &str,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    let actor_user_id = require_writer_id(v)?;
+    let group = group_for_owner_edit(group_id, &actor_user_id, v).await?;
+    if group_id == owner_group_id {
+        return Err(super::GaugeServiceError::validation("Group cannot own itself").into());
+    }
+
+    let principal = ensure_group_principal(owner_group_id, v).await?;
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    if group_has_owner_principal(&group, &principal_id, v).await? {
+        return Ok(());
+    }
+    group
+        .relate_to_owner_record(&principal_id, v, valence::use_!(r"When an operator **adds an owner group** to a permission group in **Gauge**, we **write the owner edge** from the group to the owner group so its owners can approve and edit. Operators see the updated owners on the group detail."))
+        .await?;
+    persist_history_entry(
+        v,
+        "permission_group",
+        group_id.to_string(),
+        "add_owner_group",
+        Some(actor_user_id),
+        vec![HistoryDiffItemDto {
+            field: "owner_groups".to_string(),
+            old_value: serde_json::Value::Null,
+            new_value: serde_json::Value::String(owner_group_id.to_string()),
+        }],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Remove `owner_group_id` as an owner of `group_id` (owner or super-user only).
+///
+/// Fails if it is the group's last owner. Removing a group that isn't an owner changes
+/// nothing. Records history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError) (via `anyhow`): `NotFound` for a missing
+/// group; `NotAuthorized` as for [`add_group_owner_group`]; `Validation` when it would remove
+/// the last owner. Valence failures otherwise.
+pub async fn remove_group_owner_group(
+    group_id: &str,
+    owner_group_id: &str,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    let actor_user_id = require_writer_id(v)?;
+    let group = group_for_owner_edit(group_id, &actor_user_id, v).await?;
+    let Some(principal) = get_group_principal_raw(&group_principal_id(owner_group_id), v).await?
+    else {
+        return Ok(());
+    };
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    let owner_ids = group
+        .get_owners_record_ids(v, valence::use_!(r"When **Gauge** needs the **owners of a permission group**, we **follow the owner edges** so the product can show owners on the group detail or decide who may edit. Editors see that list; access checks use it only to allow or deny."))
+        .await?;
+    if !owner_ids.contains(&principal_id) {
+        return Ok(());
+    }
+    if owner_ids.len() <= 1 {
+        return Err(super::GaugeServiceError::validation(
+            "Cannot remove the last owner from a group",
+        )
+        .into());
+    }
+    group
+        .unrelate_from_owner_record(&principal_id, v, valence::use_!(r"When an operator **removes an owner group** from a permission group in **Gauge**, we **delete the owner edge** so that group's owners no longer count as owners for approvals and edits. Operators see the updated owners on the group detail."))
+        .await?;
+    persist_history_entry(
+        v,
+        "permission_group",
+        group_id.to_string(),
+        "remove_owner_group",
+        Some(actor_user_id),
+        vec![HistoryDiffItemDto {
+            field: "owner_groups".to_string(),
+            old_value: serde_json::Value::String(owner_group_id.to_string()),
+            new_value: serde_json::Value::Null,
+        }],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Load the group and check the caller owns it (directly or through a group) or is a super
+/// user, the rule for every ownership edit.
+async fn group_for_owner_edit(
+    group_id: &str,
+    actor_user_id: &str,
+    v: &Valence,
+) -> anyhow::Result<PermissionGroup> {
+    let group = get_group_raw(group_id, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
+    if !group_has_owner_user(&group, &user_id_candidates(actor_user_id), v).await?
+        && !actor_is_super_user(v).await?
+    {
+        return Err(super::GaugeServiceError::not_authorized("edit group ownership").into());
+    }
+    Ok(group)
+}
+
 /// Add `user_id` as a member of `group_id` (owner or super-user only) and record history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
 pub async fn add_group_member_user(
     group_id: &str,
     user_id: &str,
     v: &Valence,
 ) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
     let group = get_group_raw(group_id, system)
@@ -367,12 +629,16 @@ pub async fn add_group_member_user(
 }
 
 /// Remove `user_id` as a member of `group_id` (owner or super-user only) and record history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
 pub async fn remove_group_member_user(
     group_id: &str,
     user_id: &str,
     v: &Valence,
 ) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
     let group = get_group_raw(group_id, system)
@@ -410,6 +676,10 @@ pub async fn remove_group_member_user(
 
 /// Add `child_group_id` as a nested member group of `group_id` (owner or super-user
 /// only); fails if `group_id == child_group_id`. Records history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
 pub async fn add_group_member_group(
     group_id: &str,
     child_group_id: &str,
@@ -421,7 +691,7 @@ pub async fn add_group_member_group(
         )
         .into());
     }
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
     let group = get_group_raw(group_id, system)
@@ -464,6 +734,10 @@ pub async fn add_group_member_group(
 
 /// Remove `child_group_id` as a nested member group of `group_id` (owner or
 /// super-user only). Records history.
+///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
 pub async fn remove_group_member_group(
     group_id: &str,
     child_group_id: &str,
@@ -475,7 +749,7 @@ pub async fn remove_group_member_group(
         )
         .into());
     }
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let actor_candidates = user_id_candidates(&actor_user_id);
     let system = v;
     let group = get_group_raw(group_id, system)
