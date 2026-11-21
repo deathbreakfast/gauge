@@ -5,11 +5,13 @@
 
 mod common;
 
-use common::{record_pk_id, seed_group_with_owner, seed_user, test_valence};
+use common::{
+    record_pk_id, seed_group_with_owner, seed_super_user_group_with_member, seed_user, test_valence,
+};
 use gauge::generated::PermissionGroup;
 use gauge::service;
 use gauge::super_user::{SUPER_USER_GROUP_ID, SUPER_USER_GROUP_NAME};
-use gauge::types::PermissionGroupCreateInput;
+use gauge::types::{HistoryEntryDto, PermissionGroupCreateInput};
 use valence::{Actor, Model, Valence};
 
 async fn system() -> Valence {
@@ -63,17 +65,26 @@ async fn members(system: &Valence, id: &str) -> Vec<String> {
         .collect()
 }
 
-async fn history_actors(system: &Valence, id: &str) -> Vec<Option<String>> {
+/// Group history as read by a seeded super user (`list_history` needs a signed-in user).
+/// Call once per test: it seeds the Super User group.
+async fn history(system: &Valence, id: &str) -> Vec<HistoryEntryDto> {
+    seed_user("auditor", "auditor@example.test", system).await;
+    seed_super_user_group_with_member(system, "auditor").await;
     service::list_history(
-        system,
+        &user(system, "auditor"),
         Some("permission_group".to_string()),
         Some(id.to_string()),
     )
     .await
     .expect("list history")
-    .into_iter()
-    .map(|e| e.actor_user_id)
-    .collect()
+}
+
+async fn history_actors(system: &Valence, id: &str) -> Vec<Option<String>> {
+    history(system, id)
+        .await
+        .into_iter()
+        .map(|e| e.actor_user_id)
+        .collect()
 }
 
 fn assert_not_authorized(err: &anyhow::Error) {
@@ -402,13 +413,7 @@ async fn owner_group_grants_edit_to_its_owners_happy() {
             .expect("can_edit after")
     );
 
-    let history = service::list_history(
-        &system,
-        Some("permission_group".to_string()),
-        Some("g_target".to_string()),
-    )
-    .await
-    .expect("history");
+    let history = history(&system, "g_target").await;
     let adds = history
         .iter()
         .flat_map(|e| &e.diffs)
@@ -435,13 +440,7 @@ async fn system_adds_and_removes_owner_group_happy() {
         vec!["user:owner".to_string()]
     );
 
-    let history = service::list_history(
-        &system,
-        Some("permission_group".to_string()),
-        Some("g_target".to_string()),
-    )
-    .await
-    .expect("history");
+    let history = history(&system, "g_target").await;
     assert!(
         history
             .iter()
