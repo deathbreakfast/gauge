@@ -281,14 +281,14 @@ async fn system_creates_managed_group_with_named_owner_happy() {
 async fn create_managed_group_twice_changes_nothing_happy() {
     let system = system().await;
     seed_user("alice", "alice@example.test", &system).await;
-    seed_user("bob", "bob@example.test", &system).await;
 
     service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system)
         .await
         .expect("first create");
-    let again = service::create_managed_group("team_ops", "Other", "changed", Some("bob"), &system)
-        .await
-        .expect("second create returns existing");
+    let again =
+        service::create_managed_group("team_ops", "Other", "changed", Some("alice"), &system)
+            .await
+            .expect("second create returns existing");
     assert_eq!(record_pk_id(again.id()), "team_ops");
     assert_eq!(again.name(), "Ops");
     assert_eq!(load(&system, "team_ops").await.name(), "Ops");
@@ -297,6 +297,30 @@ async fn create_managed_group_twice_changes_nothing_happy() {
         vec!["user:alice".to_string()]
     );
     assert!(members(&system, "team_ops").await.is_empty());
+}
+
+#[tokio::test]
+async fn managed_group_id_taken_by_another_owner_is_refused_sad() {
+    let system = system().await;
+    seed_user("alice", "alice@example.test", &system).await;
+    seed_user("mallory", "mallory@example.test", &system).await;
+    let mallory = user(&system, "mallory");
+
+    // A session user claims the id before the job runs.
+    service::create_managed_group("team_ops", "Squat", "", None, &mallory)
+        .await
+        .expect("mallory creates team_ops");
+
+    assert_validation(
+        &service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system)
+            .await
+            .expect_err("job must not adopt a group alice doesn't own"),
+    );
+    assert_eq!(
+        owners(&system, "team_ops").await,
+        vec!["user:mallory".to_string()]
+    );
+    assert_eq!(load(&system, "team_ops").await.name(), "Squat");
 }
 
 #[tokio::test]

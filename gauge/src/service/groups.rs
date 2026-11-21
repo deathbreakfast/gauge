@@ -162,8 +162,11 @@ async fn create_group_with(
 ///
 /// Use this when a host or job manages a group under a stable id it can look up later, for
 /// example a team's group created at boot. The group starts with one owner and no members.
-/// If a group with `id` already exists it is returned as is, so a job can call this on every
-/// run; the name, description and owners of the existing group are left alone.
+/// If a group with `id` already exists and the requested owner owns it directly, it is
+/// returned as is, so a job can call this on every run; the name, description and owners of
+/// the existing group are left alone. If the requested owner doesn't own it, the call fails,
+/// so a group someone else created under the same id first is never taken for the managed
+/// one.
 ///
 /// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
 /// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
@@ -182,7 +185,8 @@ async fn create_group_with(
 /// [`GaugeServiceError`](super::GaugeServiceError) (via `anyhow`):
 ///
 /// - `Validation`: an empty id or name, the Super User group id or name, a name already used
-///   by a group with a different id, or a System caller with no `owner_user`.
+///   by a group with a different id, a System caller with no `owner_user`, or an existing
+///   group under `id` that the requested owner doesn't own.
 /// - `NotAuthorized`: a session caller who isn't a super user names someone else as owner.
 /// - `NotFound`: `owner_user` (or the session user) has no user record. Nothing is saved.
 /// - A caller that is neither a signed-in user nor System is refused. Valence failures
@@ -206,20 +210,6 @@ pub async fn create_managed_group(
         ))
         .into());
     }
-    if let Some(existing) = get_group_raw(id, v).await? {
-        return Ok(existing);
-    }
-    if groups_named(name, v)
-        .await?
-        .iter()
-        .any(|g| record_pk_id(g.id()) != id)
-    {
-        return Err(super::GaugeServiceError::validation(format!(
-            "Permission group name already exists: {name}"
-        ))
-        .into());
-    }
-
     let is_system = v.actor().is_system();
     let owner = match owner_user {
         Some(owner) => owner.to_string(),
@@ -245,6 +235,26 @@ pub async fn create_managed_group(
         .ok_or_else(|| super::GaugeServiceError::not_found("user", &owner))?;
     let principal = ensure_user_principal(&record_pk_id(owner_row.id()), v).await?;
     let principal_id = require_model_id(principal.id(), "principal")?;
+
+    if let Some(existing) = get_group_raw(id, v).await? {
+        if group_has_owner_principal(&existing, &principal_id, v).await? {
+            return Ok(existing);
+        }
+        return Err(super::GaugeServiceError::validation(format!(
+            "Permission group {id} already exists and is not owned by {owner}"
+        ))
+        .into());
+    }
+    if groups_named(name, v)
+        .await?
+        .iter()
+        .any(|g| record_pk_id(g.id()) != id)
+    {
+        return Err(super::GaugeServiceError::validation(format!(
+            "Permission group name already exists: {name}"
+        ))
+        .into());
+    }
 
     let now = Utc::now();
     let group = PermissionGroup::new(
