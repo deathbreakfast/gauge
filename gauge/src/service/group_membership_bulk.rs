@@ -7,7 +7,7 @@ use crate::generated::PermissionGroup;
 use crate::super_user::SUPER_USER_GROUP_ID;
 use crate::types::{HistoryDiffItemDto, PrincipalKind};
 
-use super::helpers::{persist_history_entry, principal_kind_from_record, require_user_id};
+use super::helpers::{persist_history_entry, principal_kind_from_record, require_writer_id};
 use super::membership::group_for_member_edit;
 use super::GaugeServiceError;
 
@@ -30,6 +30,10 @@ struct Member {
 /// Returns the number of member edges removed, one per principal. A group with no members
 /// returns `0` and writes nothing.
 ///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
+///
 /// One `clear_members` history entry records the removed ids, a diff item each for
 /// `member_users`, `member_groups` and `member_service_users` (plus `member_principals` for
 /// any member that isn't one of those kinds), so the audit trail shows who
@@ -43,10 +47,10 @@ struct Member {
 /// # Errors
 ///
 /// [`GaugeServiceError`] (via `anyhow`): `NotAuthorized` when the caller isn't a signed-in
-/// user, doesn't own the group, or isn't a super user; `NotFound` for a missing group;
+/// user or System, doesn't own the group, or isn't a super user; `NotFound` for a missing group;
 /// `Validation` for the Super User group. Valence failures otherwise.
 pub async fn clear_group_members(group_id: &str, v: &Valence) -> anyhow::Result<usize> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     if group_id == SUPER_USER_GROUP_ID {
         return Err(GaugeServiceError::validation(
             "Cannot clear the members of the well-known Super User group",

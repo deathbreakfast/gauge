@@ -8,8 +8,11 @@
 //! - Permission/group CRUD with ownership/super-user authorization; domain
 //!   taxonomy CRUD with domain owners or Super User.
 //! - Principal graph management (users/groups, nested membership, owners), plus
-//!   service users as group members; owner-only group creation and clearing
-//!   every member of a group in one call.
+//!   service users as group members; owner-only group creation, managed groups
+//!   with a chosen id and named owner, groups owning groups, and clearing every
+//!   member of a group in one call.
+//! - Group writes accept `Actor::System` as a super user, for jobs that start as
+//!   System (boot, Chronon).
 //! - Direct permission grants and revokes for service users, gated on the caller seeing the
 //!   service user (grant) and editing the permission.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
@@ -50,8 +53,9 @@ pub use domains::{
 pub use error::GaugeServiceError;
 pub use group_membership_bulk::clear_group_members;
 pub use groups::{
-    add_group_member_group, add_group_member_user, add_group_owner_user, create_group,
-    create_group_owner_only, delete_group, remove_group_member_group, remove_group_member_user,
+    add_group_member_group, add_group_member_user, add_group_owner_group, add_group_owner_user,
+    create_group, create_group_owner_only, create_managed_group, delete_group,
+    remove_group_member_group, remove_group_member_user, remove_group_owner_group,
     remove_group_owner_user, update_group,
 };
 pub(crate) use helpers::raw_table_rows;

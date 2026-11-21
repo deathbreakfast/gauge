@@ -269,3 +269,28 @@ async fn clear_members_removes_service_user_and_keeps_its_principal_happy() {
         .iter()
         .any(|m| m.id == service_user.as_str()));
 }
+
+#[tokio::test]
+async fn system_adds_and_removes_service_user_member_happy() {
+    let w = world().await;
+    let service_user = create_service_user(&w, "alice", "reader-bot").await;
+    let system = w.as_actor(valence::Actor::System {
+        operation: "service_user_member_test".to_string(),
+    });
+
+    add_group_member_service_user(READERS, &service_user, &system)
+        .await
+        .expect("System adds service user");
+    assert!(members(&w, "carol")
+        .await
+        .iter()
+        .any(|m| m.id == service_user.as_str()));
+
+    remove_group_member_service_user(READERS, &service_user, &system)
+        .await
+        .expect("System removes service user");
+    assert!(!members(&w, "carol")
+        .await
+        .iter()
+        .any(|m| m.id == service_user.as_str()));
+}
