@@ -15,6 +15,9 @@ ignore = [
     { id = "RUSTSEC-2026-0441", reason = "pin-utils unmaintained; transitive via surrealdb -> wasmtimer (dev-dependency only); no safe upgrade" },
     { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.30 bundled SQLite (CVE-2026-119375); transitive via uf-valence-backend-sqlite -> sqlx 0.8.6, which pins libsqlite3-sys ^0.30; fix needs libsqlite3-sys >=0.39, blocked until sqlx/valence upgrade" },
     { id = "RUSTSEC-2026-0454", reason = "reblessive unsound Send/Sync; transitive via surrealdb-core 3.3 (dev-dependency of gauge); fix needs surrealdb 4.0, blocked until the upgrade lands" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no fixed release; temporary until a maintained replacement lands (security:RUSTSEC-2026-0543)" },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, no fixed release; temporary until a maintained replacement lands (security:RUSTSEC-2026-0555)" },
+    { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained (wraps chrono), via surrealdb dev-dependency, no fixed release; temporary (security:RUSTSEC-2026-0542)" },
 ]
 
 [licenses]

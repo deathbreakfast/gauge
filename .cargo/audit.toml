@@ -24,4 +24,8 @@ ignore = [
     "RUSTSEC-2026-0441", # pin-utils, via surrealdb -> wasmtimer (dev-dependency only)
     # reblessive unsound Send/Sync: surrealdb-core 3.3 (dev-dependency); fix needs surrealdb 4.0.
     "RUSTSEC-2026-0454",
+    # Unmaintained, no fixed release; temporary, tracked as security:<id>.
+    "RUSTSEC-2026-0542", # humantime, via surrealdb (dev-dependency)
+    "RUSTSEC-2026-0543", # chrono
+    "RUSTSEC-2026-0555", # chrono-tz
 ]
