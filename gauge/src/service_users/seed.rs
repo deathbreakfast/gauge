@@ -3,8 +3,9 @@
 use valence::Valence;
 
 use super::{
-    LEPTON_SERVICE_USER_CREATE, LEPTON_SERVICE_USER_MANAGE_ANY, SERVICE_USER_CREATORS_GROUP_ID,
-    SERVICE_USER_CREATORS_GROUP_NAME,
+    GAUGE_LIST_PERMISSION_HOLDERS, LEPTON_SERVICE_USER_CREATE, LEPTON_SERVICE_USER_MANAGE_ANY,
+    PERMISSION_HOLDER_READERS_GROUP_ID, PERMISSION_HOLDER_READERS_GROUP_NAME,
+    SERVICE_USER_CREATORS_GROUP_ID, SERVICE_USER_CREATORS_GROUP_NAME,
 };
 use crate::manifest_sync::{
     sync_permission_manifests, PermissionDomainInput, PermissionInput, PermissionManifestInput,
@@ -23,28 +24,45 @@ pub struct ServiceUserSeedStats {
 fn manifest() -> PermissionManifestInput {
     PermissionManifestInput {
         app_id: "lepton-service-users".to_string(),
-        domains: vec![PermissionDomainInput {
-            key: "lepton".to_string(),
-            name: "Lepton".to_string(),
-            description: "Sign-in, accounts, and service users".to_string(),
-            permissions: vec![
-                PermissionInput {
-                    name: LEPTON_SERVICE_USER_CREATE.to_string(),
-                    description: "Create service users owned by yourself".to_string(),
-                },
-                PermissionInput {
-                    name: LEPTON_SERVICE_USER_MANAGE_ANY.to_string(),
-                    description:
-                        "View, suspend, and delete every service user, and mint tokens for them"
-                            .to_string(),
-                },
-            ],
-        }],
+        domains: vec![
+            PermissionDomainInput {
+                key: "lepton".to_string(),
+                name: "Lepton".to_string(),
+                description: "Sign-in, accounts, and service users".to_string(),
+                permissions: vec![
+                    PermissionInput {
+                        name: LEPTON_SERVICE_USER_CREATE.to_string(),
+                        description: "Create service users owned by yourself".to_string(),
+                    },
+                    PermissionInput {
+                        name: LEPTON_SERVICE_USER_MANAGE_ANY.to_string(),
+                        description:
+                            "View, suspend, and delete every service user, and mint tokens for them"
+                                .to_string(),
+                    },
+                ],
+            },
+            PermissionDomainInput {
+                key: "gauge".to_string(),
+                name: "Gauge".to_string(),
+                description: "Permissions, groups, and who holds them".to_string(),
+                permissions: vec![PermissionInput {
+                    name: GAUGE_LIST_PERMISSION_HOLDERS.to_string(),
+                    description: "List every user who holds a permission, for service users that \
+                    notify them"
+                        .to_string(),
+                }],
+            },
+        ],
     }
 }
 
 /// Create the service user permissions and the "Service user creators" group, and grant the
 /// group `lepton.service_user.create`.
+///
+/// Also creates [`GAUGE_LIST_PERMISSION_HOLDERS`] and the "Permission holder readers" group
+/// that holds it; add a service user to that group so it may call
+/// [`crate::service::list_permission_holders`].
 ///
 /// Runs at host boot on the System Valence, after table sync and after the
 /// host's own manifest sync. Safe to run on every boot: existing rows are kept
@@ -72,6 +90,18 @@ pub async fn seed_service_user_permissions(
     )
     .await
     .map_err(|e| anyhow::Error::new(e).context(format!("seed {SERVICE_USER_CREATORS_GROUP_ID}")))?;
+    ensure_group_granted_permission(
+        system,
+        PERMISSION_HOLDER_READERS_GROUP_ID,
+        PERMISSION_HOLDER_READERS_GROUP_NAME,
+        "Service users that may list who holds a permission",
+        GAUGE_LIST_PERMISSION_HOLDERS,
+        &[],
+    )
+    .await
+    .map_err(|e| {
+        anyhow::Error::new(e).context(format!("seed {PERMISSION_HOLDER_READERS_GROUP_ID}"))
+    })?;
     let stats = ServiceUserSeedStats {
         permissions_created: synced.permissions_created,
     };

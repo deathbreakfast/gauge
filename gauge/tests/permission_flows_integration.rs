@@ -412,11 +412,12 @@ mod owner_only_and_clear {
     #[tokio::test]
     async fn create_functions_refuse_callers_who_are_not_signed_in_sad() {
         let c = Ctx::new().await;
-        assert!(service::create_group(input("X1"), &c.system).await.is_err());
-        assert!(service::create_group_owner_only(input("X2"), &c.system)
+        let anon = c.system.with_actor(valence::Actor::Anonymous);
+        assert!(service::create_group(input("X1"), &anon).await.is_err());
+        assert!(service::create_group_owner_only(input("X2"), &anon)
             .await
             .is_err());
-        assert!(service::clear_group_members("anything", &c.system)
+        assert!(service::clear_group_members("anything", &anon)
             .await
             .is_err());
     }

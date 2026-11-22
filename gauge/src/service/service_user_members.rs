@@ -14,7 +14,7 @@ use crate::types::HistoryDiffItemDto;
 
 use super::helpers::{
     get_group_raw, group_has_member_principal, group_has_owner_user, persist_history_entry,
-    require_model_id, require_user_id, user_id_candidates,
+    require_model_id, require_user_id, require_writer_id, user_id_candidates,
 };
 use super::membership::group_for_member_edit;
 use super::GaugeServiceError;
@@ -118,10 +118,14 @@ pub async fn can_add_group_member_service_user(
 /// their service user in a group they don't own. Service users never join the Super User group.
 /// Adding a service user that is already a member changes nothing.
 ///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
+///
 /// # Errors
 ///
 /// [`GaugeServiceError`] (via `anyhow`): `NotAuthorized` when the caller isn't a
-/// signed-in user, doesn't own the group, or isn't a super user; `NotFound` for a
+/// signed-in user or System, doesn't own the group, or isn't a super user; `NotFound` for a
 /// missing group or a service user the caller can't see; `Validation` for the Super User
 /// group. Valence failures otherwise.
 pub async fn add_group_member_service_user(
@@ -129,7 +133,7 @@ pub async fn add_group_member_service_user(
     service_user: &ServiceUserId,
     v: &Valence,
 ) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     if group_id == SUPER_USER_GROUP_ID {
         return Err(GaugeServiceError::validation(
             "Service users cannot join the Super User group",
@@ -213,6 +217,10 @@ async fn relate_service_user_member(
 /// required, so a group owner can always remove a service user someone else added.
 /// Removing a service user that isn't a member changes nothing.
 ///
+/// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
+/// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
+/// request that elevated midway.
+///
 /// # Errors
 ///
 /// [`GaugeServiceError`] (via `anyhow`): `NotAuthorized` or `NotFound` for the
@@ -222,7 +230,7 @@ pub async fn remove_group_member_service_user(
     service_user: &ServiceUserId,
     v: &Valence,
 ) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
+    let actor_user_id = require_writer_id(v)?;
     let group = group_for_member_edit(group_id, &actor_user_id, v).await?;
     let Some(principal) = get_service_user_principal_raw(service_user, v).await? else {
         return Ok(());

@@ -53,6 +53,10 @@
 //!   `lepton.service_user.manage_any` permissions and a seeded "Service user creators" group.
 //!   [Back Lepton service user creation with
 //!   Gauge](#back-lepton-service-user-creation-with-gauge)
+//! - **Permission holder lists** — Every user who holds a permission, directly or through
+//!   nested groups, for a service that notifies them. System jobs, super users, the
+//!   permission's editors, and service users in "Permission holder readers" may ask.
+//!   [List who holds a permission](#list-who-holds-a-permission)
 //! - **Privilege-shaped mutations** — Domain ops that change who can act
 //!   (grants, membership, ownership, nested groups, permission delete/update,
 //!   request decide). Product servers gate these with TOTP step-up; taxonomy
@@ -615,7 +619,7 @@
 //!
 //! // At boot, on the System Valence.
 //! let stats = seed_service_user_permissions(&system).await?;
-//! assert!(stats.permissions_created <= 2); // 0 on every boot after the first
+//! assert!(stats.permissions_created <= 3); // 0 on every boot after the first
 //! if install_gauge_service_user_gate().is_err() {
 //!     // Another gate is already installed in this process; the first one stays.
 //! }
@@ -640,6 +644,40 @@
 //! gate, even as a member of "Service user creators". Next: [Give a service user
 //! permissions through a group](#give-a-service-user-permissions-through-a-group) to grant the
 //! service user access once it exists.
+//!
+//! ## List who holds a permission
+//!
+//! [`service::list_permission_holders`] returns the bare user ids of everyone who holds a
+//! permission: granted to them directly, or to a group they own or belong to, at any depth.
+//! Use it to fan a notification out to a permission's holders. It reads the grant graph with
+//! raw reads under the caller's own Valence, so a job never elevates to System to call it.
+//!
+//! **Prerequisites:** `ssr`; [`service_users::seed_service_user_permissions`] run at boot,
+//! which creates the `GaugeListPermissionHolders` permission and the "Permission holder
+//! readers" group that holds it.
+//!
+//! 1. At boot, add the publishing service user to
+//!    [`service_users::PERMISSION_HOLDER_READERS_GROUP_ID`].
+//! 2. Call `list_permission_holders` on that service user's Valence.
+//!
+//! ```ignore
+//! use gauge::service::{add_group_member_service_user, list_permission_holders};
+//! use gauge::service_users::PERMISSION_HOLDER_READERS_GROUP_ID;
+//!
+//! // At boot, on the System Valence.
+//! add_group_member_service_user(PERMISSION_HOLDER_READERS_GROUP_ID, &ocr_service_user, &system).await?;
+//!
+//! // Later, in the publishing job, running as that service user.
+//! let admins = list_permission_holders(&service_user_valence, "ocr.admin").await?;
+//! for user_id in &admins {
+//!     // notify user_id
+//! }
+//! ```
+//!
+//! System actors, super users, and users who can edit every permission with that name may
+//! call it too. Anyone else gets [`service::GaugeServiceError::NotAuthorized`], including a
+//! service user outside the group or one that is suspended. Service users on the grant graph
+//! are not listed, and an unknown permission name gives an empty list.
 //!
 //! ## Privilege-shaped mutations
 //!

@@ -108,6 +108,10 @@ name = "history_integration"
 required-features = ["ssr"]
 
 [[test]]
+name = "managed_groups_integration"
+required-features = ["ssr"]
+
+[[test]]
 name = "no_elevate_path_gate"
 required-features = ["ssr"]
 
@@ -181,4 +185,8 @@ required-features = ["ssr"]
 
 [[test]]
 name = "group_service_user_members_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "permission_holders_integration"
 required-features = ["ssr"]

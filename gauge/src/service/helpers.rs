@@ -471,6 +471,22 @@ pub fn require_user_id(v: &Valence) -> anyhow::Result<String> {
     current_user_id(v).ok_or_else(|| anyhow::anyhow!("Authenticated user required"))
 }
 
+/// Actor id recorded for a group write: the signed-in user's id, or `"system"` for
+/// [`valence::Actor::System`] (history stores it as `user:system`).
+///
+/// System counts as a super user on group writes. It is meant for jobs that start as System
+/// (boot, Chronon), never for a request that elevated midway. Other actors without a user id
+/// are refused as by [`require_user_id`].
+pub fn require_writer_id(v: &Valence) -> anyhow::Result<String> {
+    if v.actor().is_system() {
+        return Ok(SYSTEM_ACTOR_ID.to_string());
+    }
+    require_user_id(v)
+}
+
+/// Id [`require_writer_id`] returns for [`valence::Actor::System`].
+const SYSTEM_ACTOR_ID: &str = "system";
+
 pub fn redact_user_principal_label(
     reference: PrincipalRefDto,
     reveal_email: bool,

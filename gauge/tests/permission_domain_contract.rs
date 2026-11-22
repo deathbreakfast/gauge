@@ -745,19 +745,16 @@ async fn creator_becomes_maintainer_outsider_cannot_update_tm_sec_07() {
 
 #[tokio::test]
 async fn unauthenticated_cannot_create_group_sad() {
-    let system = test_valence(Actor::System {
-        operation: "unauthenticated_create_group".to_string(),
-    })
-    .await;
+    let anon = test_valence(Actor::Anonymous).await;
     let err = service::create_group(
         PermissionGroupCreateInput {
             name: "No Actor Group".to_string(),
             description: String::new(),
         },
-        &system,
+        &anon,
     )
     .await
-    .expect_err("system actor");
+    .expect_err("anonymous actor");
     let msg = err.to_string();
     assert!(msg.contains("Authenticated user required"), "got {msg}");
 }
