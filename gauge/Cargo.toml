@@ -186,3 +186,7 @@ required-features = ["ssr"]
 [[test]]
 name = "group_service_user_members_integration"
 required-features = ["ssr"]
+
+[[test]]
+name = "permission_holders_integration"
+required-features = ["ssr"]

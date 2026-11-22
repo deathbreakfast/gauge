@@ -16,6 +16,8 @@
 //! - Direct permission grants and revokes for service users, gated on the caller seeing the
 //!   service user (grant) and editing the permission.
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
+//! - Every user holding a permission (`list_permission_holders`), for fan-out by System jobs,
+//!   super users, the permission's editors, and service users granted the lookup permission.
 //! - Permission request workflow (create/list/review/decide), including requests for a
 //!   service user and a lookup of the ones still pending.
 //! - History/audit projection for changed fields and actions.
@@ -35,6 +37,7 @@ mod error;
 mod group_membership_bulk;
 mod groups;
 pub(crate) mod helpers;
+mod holders;
 mod membership;
 mod permissions;
 mod requests;
@@ -59,6 +62,7 @@ pub use groups::{
     remove_group_owner_user, update_group,
 };
 pub(crate) use helpers::raw_table_rows;
+pub use holders::list_permission_holders;
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
     grant_permission_to_group, grant_permission_to_service_user_checked, grant_permission_to_user,

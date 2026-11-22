@@ -13,7 +13,10 @@
 //!
 //! The same module answers Lepton's service user gate. [`seed_service_user_permissions`]
 //! creates [`LEPTON_SERVICE_USER_CREATE`] and [`LEPTON_SERVICE_USER_MANAGE_ANY`] plus the
-//! "Service user creators" group, and [`install_gauge_service_user_gate`] makes Lepton ask
+//! "Service user creators" group, and [`GAUGE_LIST_PERMISSION_HOLDERS`] plus the
+//! "Permission holder readers" group ([`PERMISSION_HOLDER_READERS_GROUP_ID`]); a service user
+//! added to that group may call [`crate::service::list_permission_holders`].
+//! [`install_gauge_service_user_gate`] makes Lepton ask
 //! Gauge who may create service users and who may manage everyone's service users. The crate
 //! root walks through both: [Give a service user permissions through a
 //! group](crate#give-a-service-user-permissions-through-a-group) and [Back Lepton service user
@@ -40,6 +43,12 @@ pub const LEPTON_SERVICE_USER_MANAGE_ANY: &str = "lepton.service_user.manage_any
 pub const SERVICE_USER_CREATORS_GROUP_ID: &str = "service_user_creators";
 /// Display name of [`SERVICE_USER_CREATORS_GROUP_ID`].
 pub const SERVICE_USER_CREATORS_GROUP_NAME: &str = "Service user creators";
+/// Permission that lets a service user call [`crate::service::list_permission_holders`].
+pub const GAUGE_LIST_PERMISSION_HOLDERS: &str = "GaugeListPermissionHolders";
+/// Id of the seeded group whose members hold [`GAUGE_LIST_PERMISSION_HOLDERS`].
+pub const PERMISSION_HOLDER_READERS_GROUP_ID: &str = "permission_holder_readers";
+/// Display name of [`PERMISSION_HOLDER_READERS_GROUP_ID`].
+pub const PERMISSION_HOLDER_READERS_GROUP_NAME: &str = "Permission holder readers";
 
 /// Valence table holding service user principals.
 pub(crate) const SERVICE_USER_PRINCIPAL_TABLE: &str = "permission_service_user_principal";
