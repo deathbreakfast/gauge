@@ -6,7 +6,7 @@ valence_schema! {
     PermissionUserPrincipal {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_user_principal",
-        version: "0.1.0",
+        version: "0.1.1",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Principal wrapper for user records in permission trait-targeted relations",
 
@@ -48,7 +48,7 @@ valence_schema! {
                 table: "user",
                 cardinality: HasOne,
                 required: true,
-                on_delete: Restrict,
+                on_delete: Cascade,
                 model: "lepton::generated::User",
             },
         ],

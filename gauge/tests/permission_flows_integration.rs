@@ -5,11 +5,13 @@
 mod common;
 
 use common::{record_pk_id, seed_user, test_valence};
+use gauge::generated::{Permission, PermissionUserPrincipal};
 use gauge::service;
 use gauge::types::{
     PermissionCreateInput, PermissionDomainCreateInput, PermissionGroupCreateInput,
 };
-use valence::Actor;
+use valence::deletion::dag::DeletionDag;
+use valence::{Actor, Model};
 
 #[tokio::test]
 #[allow(clippy::too_many_lines)]
@@ -547,4 +549,85 @@ mod owner_only_and_clear {
 
 async fn super_user_seed(system: &valence::Valence, user: &str) {
     common::seed_super_user_group_with_member(system, user).await;
+}
+
+/// A user who created a permission and holds a user principal can be erased: the permission
+/// stays with its owners group and loses its creator, and the principal row goes with the user.
+#[tokio::test]
+async fn user_erase_clears_creator_and_removes_user_principal() {
+    let system = test_valence(Actor::System {
+        operation: "permission_test_setup".to_string(),
+    })
+    .await;
+    seed_user("erase_u1", "erase@example.com", &system).await;
+    let user_ctx = system.with_actor(Actor::User {
+        user_id: "erase_u1".to_string(),
+    });
+
+    let group = service::create_group(
+        PermissionGroupCreateInput {
+            name: "Erase team".to_string(),
+            description: "Owners group".to_string(),
+        },
+        &user_ctx,
+    )
+    .await
+    .expect("create group");
+    let domain = service::create_domain(
+        PermissionDomainCreateInput {
+            name: "Erase domain".to_string(),
+            description: "erase permissions".to_string(),
+        },
+        &user_ctx,
+    )
+    .await
+    .expect("create domain");
+    let permission = service::create_permission(
+        PermissionCreateInput {
+            name: "CanErase".to_string(),
+            description: String::new(),
+            owners_group_id: record_pk_id(group.id()),
+            domain_id: record_pk_id(domain.id()),
+        },
+        &user_ctx,
+    )
+    .await
+    .expect("create permission");
+    let permission_id = record_pk_id(permission.id());
+    service::grant_permission_to_user(&permission_id, "erase_u1", &user_ctx)
+        .await
+        .expect("grant to creator");
+    assert!(
+        PermissionUserPrincipal::get("user:erase_u1", &system, valence::use_!(r"**Test:** Check the **user principal** exists before the user is erased in `permission_flows_integration`. CI and developers running the suite only."))
+            .await
+            .expect("read principal")
+            .is_some(),
+        "the grant should create the user principal"
+    );
+
+    let dag = DeletionDag::compute("user", "erase_u1", &system)
+        .await
+        .expect("compute user deletion plan");
+    assert!(
+        dag.restrict_violations.is_empty(),
+        "Gauge rows must not block a user wipe: {:?}",
+        dag.restrict_violations
+    );
+
+    valence::delete_entity_now("user", "erase_u1", &system)
+        .await
+        .expect("erase user");
+
+    let kept = Permission::get(&permission_id, &system, valence::use_!(r"**Test:** Check the **permission** survives its creator's erasure in `permission_flows_integration`. CI and developers running the suite only."))
+        .await
+        .expect("read permission")
+        .expect("permission survives its creator");
+    assert!(kept.created_by().is_none(), "creator is cleared");
+    assert!(
+        PermissionUserPrincipal::get("user:erase_u1", &system, valence::use_!(r"**Test:** Check the **user principal** is gone after the user is erased in `permission_flows_integration`. CI and developers running the suite only."))
+            .await
+            .expect("read principal")
+            .is_none(),
+        "the user principal goes with the user"
+    );
 }

@@ -1,9 +1,11 @@
-//! Permission checks for service user actors: group membership only, raw reads only.
+//! Permission checks for service user actors: direct grants and group membership, raw reads only.
 //!
-//! A service user gets a permission when a group that holds it (directly, or through
-//! nested groups) lists the service user as a member, and the service user is active. Direct
-//! grants to a service user are ignored, and a service user is never a super user. Every read is
-//! a raw backend read, so this is safe inside privacy evaluation.
+//! A service user holds a permission, while it is active, in two ways. The permission can be
+//! granted straight to the service user's principal, which is how
+//! [`crate::service::grant_permission_to_service_user_checked`] and an approved request on its
+//! behalf land. Or a group that holds the permission (directly, or through nested groups) can
+//! list the service user as a member. A service user is never a super user. Every read is a raw
+//! backend read, so this is safe inside privacy evaluation.
 
 use std::collections::HashSet;
 
@@ -19,9 +21,9 @@ use crate::generated::{PermissionGroup, PermissionGroupPrincipal};
 /// Why a service user check came out the way it did. Logged, never shown to callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceUserDecision {
-    /// A group holding the permission lists the service user.
+    /// The permission is granted to the service user, or a group holding it lists the service user.
     Member,
-    /// No group holding the permission lists the service user.
+    /// No direct grant, and no group holding the permission lists the service user.
     NotMember,
     /// The service user is missing, suspended, or being deleted.
     Inactive,

@@ -269,7 +269,7 @@ async fn ensure_coarse_create_permission(
 
     let now = Utc::now();
     let permission = Permission::new(
-        RecordId::new("user", "system"),
+        Some(RecordId::new("user", "system")),
         RecordId::new("permission_group", spec.owners_group_id),
         RecordId::new("permission_domain", spec.domain_id),
         spec.permission_name.to_string(),

@@ -53,7 +53,7 @@ pub async fn create_permission(
 
     let now = Utc::now();
     let permission = Permission::new(
-        require_model_id(created_by.id(), "created_by")?,
+        Some(require_model_id(created_by.id(), "created_by")?),
         RecordId::new("permission_group", &owner_group_id),
         RecordId::new("permission_domain", input.domain_id.trim()),
         name,
@@ -492,7 +492,10 @@ pub async fn get_permission_detail(
         description: permission.description().cloned().unwrap_or_default(),
         // Creator id is GaugeAdmin-only (list + detail share this DTO).
         created_by_user_id: if reveal_creator {
-            valence::extract_id_from_record(permission.created_by()).unwrap_or_default()
+            permission
+                .created_by()
+                .and_then(|r| valence::extract_id_from_record(r).ok())
+                .unwrap_or_default()
         } else {
             String::new()
         },

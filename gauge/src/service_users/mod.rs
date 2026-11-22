@@ -1,10 +1,11 @@
-//! Service users in Gauge: group membership for service users, and the Lepton service user gate.
+//! Service users in Gauge: how service users get permissions, and the Lepton service user gate.
 //!
 //! A Lepton service user acts as its own Valence actor (`Actor::ServiceUser` named
-//! `svc:<uuid>`). Gauge gives such an actor permissions only through groups:
-//! add the service user with [`crate::service::add_group_member_service_user`], and
-//! [`crate::service::actor_can`] / [`crate::actor_can_raw::actor_can_raw`] then
-//! allow it whatever the group holds, while the service user is active. A service user is never a
+//! `svc:<uuid>`). Gauge gives such an actor permissions two ways: grant a permission straight to
+//! it with [`crate::service::grant_permission_to_service_user_checked`], or add it to a group
+//! with [`crate::service::add_group_member_service_user`]. [`crate::service::actor_can`] /
+//! [`crate::actor_can_raw::actor_can_raw`] then allow it what it was granted plus whatever its
+//! groups hold, while the service user is active. A service user is never a
 //! super user, never owns a group, domain, or permission, and cannot write
 //! anything in Gauge. Built-in service users, such as `cron`, still get nothing.
 //!
