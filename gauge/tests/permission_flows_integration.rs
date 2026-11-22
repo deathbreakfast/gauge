@@ -605,15 +605,24 @@ async fn user_erase_clears_creator_and_removes_user_principal() {
         "the grant should create the user principal"
     );
 
+    // Only Gauge's edges are under test here; Lepton's own `account.user` Restrict is cleared
+    // by Lepton's erase, which removes the account before the user.
     let dag = DeletionDag::compute("user", "erase_u1", &system)
         .await
         .expect("compute user deletion plan");
+    let gauge_blockers: Vec<_> = dag
+        .restrict_violations
+        .iter()
+        .filter(|v| v.blocking_table.starts_with("permission"))
+        .collect();
     assert!(
-        dag.restrict_violations.is_empty(),
-        "Gauge rows must not block a user wipe: {:?}",
-        dag.restrict_violations
+        gauge_blockers.is_empty(),
+        "Gauge rows must not block a user wipe: {gauge_blockers:?}"
     );
 
+    valence::delete_entity_now("account", "acct_erase_u1", &system)
+        .await
+        .expect("erase the fixture account first, as Lepton's erase does");
     valence::delete_entity_now("user", "erase_u1", &system)
         .await
         .expect("erase user");
