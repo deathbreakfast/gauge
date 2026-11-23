@@ -142,7 +142,7 @@ async fn seed_super_user_owner(
 ) -> PermissionUserPrincipal {
     let super_group = PermissionGroup::upsert(
         SUPER_USER_GROUP_ID,
-        PermissionGroup::new(
+        PermissionGroup::new(None, None, None,
             SUPER_USER_GROUP_NAME.to_string(),
             Some("Hard-coded singleton super-user group".into()),
             now,
@@ -181,7 +181,7 @@ async fn seed_demo_permission(
 ) -> (String, Permission) {
     let owners = PermissionGroup::upsert(
         "deployers",
-        PermissionGroup::new("Deployers".into(), Some("demo owners".into()), now, now)
+        PermissionGroup::new(None, None, None, "Deployers".into(), Some("demo owners".into()), now, now)
             .expect("owners group"),
         system,
         valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields."),
@@ -197,7 +197,7 @@ async fn seed_demo_permission(
         "demo-domain",
         PermissionDomain::new(
             false,
-            None,
+            None, false,
             "Demo".into(),
             Some("embedded host demo".into()),
             now,

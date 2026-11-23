@@ -6,7 +6,7 @@ valence_schema! {
     PermissionDomain {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_domain",
-        version: "0.1.1",
+        version: "0.2.0",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Permission grouping domain used to organize permission definitions",
 
@@ -52,6 +52,13 @@ valence_schema! {
             resource_id: {
                 r#type: FieldType::String,
                 required: false,
+            },
+            // Set by `set_umbrella_removed` when an owner restricts one resource. Ensure
+            // skips umbrella grants on a flagged domain so a reboot keeps the restriction.
+            umbrella_removed: {
+                r#type: FieldType::Boolean,
+                required: true,
+                default: false,
             },
         ],
 

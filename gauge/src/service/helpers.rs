@@ -535,6 +535,9 @@ pub async fn resolve_or_create_default_owner_group(
 
     let now = Utc::now();
     let group = PermissionGroup::new(
+        None,
+        None,
+        None,
         format!("{user_id} Owners"),
         Some("Default owner group for permission creation".to_string()),
         now,

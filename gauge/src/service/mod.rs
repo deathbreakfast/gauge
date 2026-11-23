@@ -10,7 +10,8 @@
 //! - Principal graph management (users/groups, nested membership, owners), plus
 //!   service users as group members; owner-only group creation, managed groups
 //!   with a chosen id and named owner, groups owning groups, and clearing every
-//!   member of a group in one call.
+//!   member of a group in one call. A managed group (`managed_by` set) takes its members from
+//!   the product that manages it: member edits are refused unless the caller is System.
 //! - Group writes accept `Actor::System` as a super user, for jobs that start as
 //!   System (boot, Chronon).
 //! - Direct permission grants and revokes for service users, gated on the caller seeing the
@@ -59,7 +60,7 @@ pub use groups::{
     add_group_member_group, add_group_member_user, add_group_owner_group, add_group_owner_user,
     create_group, create_group_owner_only, create_managed_group, delete_group,
     remove_group_member_group, remove_group_member_user, remove_group_owner_group,
-    remove_group_owner_user, update_group,
+    remove_group_owner_user, set_managed_group_status, update_group,
 };
 pub(crate) use helpers::raw_table_rows;
 pub use holders::list_permission_holders;
@@ -76,6 +77,7 @@ pub use requests::{
     MAX_REQUEST_REASON_CHARS,
 };
 pub use service_user_access_view::{list_service_user_groups, list_service_user_permissions};
+pub(crate) use service_user_members::get_service_user_principal_raw;
 pub use service_user_members::{
     add_group_member_service_user, can_add_group_member_service_user,
     remove_group_member_service_user,

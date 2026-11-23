@@ -8,7 +8,7 @@ use valence::{Actor, Model, RecordId, StringPredicate, Valence};
 
 use crate::generated::{Permission, PermissionDomain, PermissionGroup, PermissionUserPrincipal};
 
-use super::default_groups::grant_named_permission_to_group;
+use super::default_groups::{ensure_group_principal, grant_named_permission_to_group};
 use super::error::ResourcePermissionError;
 use super::kinds::{
     domain_id, normalize_id_fragment, owners_group_id, permission_name, permission_record_id,
@@ -175,7 +175,12 @@ async fn ensure_permission_row(
     Ok(name)
 }
 
-fn umbrella_grants(kind: &ResourceKindDescriptor, action: ResourceAction) -> Vec<&'static str> {
+/// Kind-wide groups that receive `action` on every bundle of `kind` (empty for
+/// [`super::UmbrellaPolicy::None`] and for Maintain).
+pub(super) fn umbrella_grants(
+    kind: &ResourceKindDescriptor,
+    action: ResourceAction,
+) -> Vec<&'static str> {
     if kind.umbrella == super::kinds::UmbrellaPolicy::None {
         return Vec::new();
     }
@@ -188,14 +193,17 @@ fn umbrella_grants(kind: &ResourceKindDescriptor, action: ResourceAction) -> Vec
                 vec![g.viewers, g.editors, g.operators]
             }
         }
-        ResourceAction::Edit => {
+        // Can edit includes Run, so editors receive Run with Edit.
+        ResourceAction::Edit | ResourceAction::Run => {
             if g.editors == g.operators {
                 vec![g.operators]
             } else {
                 vec![g.editors, g.operators]
             }
         }
-        ResourceAction::Delete | ResourceAction::Reveal => vec![g.operators],
+        ResourceAction::Delete | ResourceAction::Reveal | ResourceAction::Unmask => {
+            vec![g.operators]
+        }
         ResourceAction::Maintain => Vec::new(), // owners group only
     }
 }
@@ -206,7 +214,7 @@ async fn ensure_domain(
     resource_id: &str,
     dom_id: &str,
     display: &str,
-) -> Result<RecordId, ResourcePermissionError> {
+) -> Result<(RecordId, bool), ResourcePermissionError> {
     let domain = if let Some(existing) = PermissionDomain::get(dom_id, system, valence::use_!(r"In **Gauge permissions**, we **load Permission Domain** so the application can decide what to do next in this workflow. The result is used by **Gauge permissions** logic—not necessarily displayed on a page unless that feature’s UI shows it."))
         .await
         .map_err(|e| map_err(kind, resource_id, "get_domain", e))?
@@ -217,7 +225,7 @@ async fn ensure_domain(
         let now = Utc::now();
         let d = PermissionDomain::new(
             true,
-            Some(resource_id.to_string()),
+            Some(resource_id.to_string()), false,
             display.to_string(),
             Some(format!("Resource permissions for {display}")),
             now,
@@ -230,14 +238,100 @@ async fn ensure_domain(
         debug!("[permission] domain created id={dom_id}");
         created
     };
-    domain.id().cloned().ok_or_else(|| {
+    let umbrella_removed = *domain.umbrella_removed();
+    let rid = domain.id().cloned().ok_or_else(|| {
         map_err(
             kind,
             resource_id,
             "domain_id_missing",
             anyhow::anyhow!("domain id missing"),
         )
-    })
+    })?;
+    Ok((rid, umbrella_removed))
+}
+
+/// Make `owner_group_id` an owner of `group_id` unless it already is (System only).
+async fn ensure_group_owned_by_group(
+    system: &Valence,
+    kind: &ResourceKindDescriptor,
+    resource_id: &str,
+    group_id: &str,
+    owner_group_id: &str,
+) -> Result<(), ResourcePermissionError> {
+    let group = PermissionGroup::get(group_id, system, valence::use_!(r"When a **host seeds a resource permission bundle for a group**, we **load the bundle's owners group** so the granted group can be made its owner and change who can act on the resource. Used only during host boot."))
+        .await
+        .map_err(|e| map_err(kind, resource_id, "get_owners_group", e))?
+        .ok_or_else(|| {
+            map_err(
+                kind,
+                resource_id,
+                "owners_group_missing",
+                anyhow::anyhow!("group {group_id} not found"),
+            )
+        })?;
+    let principal = ensure_group_principal(system, owner_group_id).await?;
+    let pid = principal.id().cloned().ok_or_else(|| {
+        map_err(
+            kind,
+            resource_id,
+            "principal_id_missing",
+            anyhow::anyhow!("principal id missing"),
+        )
+    })?;
+    let owners = group
+        .get_owners_record_ids(system, valence::use_!(r"When a **host seeds a resource permission bundle for a group**, we **read the owners of the bundle's owners group** so re-running the seed does not add the same owner twice. Used only during host boot."))
+        .await
+        .map_err(|e| map_err(kind, resource_id, "get_group_owners", e))?;
+    if owners.contains(&pid) {
+        return Ok(());
+    }
+    group
+        .relate_to_owner_record(&pid, system, valence::use_!(r"When a **host seeds a resource permission bundle for a group**, we **write an owner edge** from the bundle's owners group to the granted group so the bundle has an owner who can change who can act on the resource. Owners see the group on the owners group's detail."))
+        .await
+        .map_err(|e| map_err(kind, resource_id, "relate_group_owner", e))
+}
+
+/// Make the bundle's owners group an owner of its domain unless it already is, so the
+/// resource's owners can update the domain (for example its `umbrella_removed` flag) under
+/// their own session. Runs on every ensure, so bundles made before this existed catch up.
+async fn ensure_domain_owned_by_owners_group(
+    system: &Valence,
+    kind: &ResourceKindDescriptor,
+    resource_id: &str,
+    dom_id: &str,
+    own_id: &str,
+) -> Result<(), ResourcePermissionError> {
+    let domain = PermissionDomain::get(dom_id, system, valence::use_!(r"When **Gauge** sets up a **resource permission bundle**, we **load its domain** so the resource's owners group can be recorded as the domain's owner. Nobody sees this step; it lets owners change the resource's settings."))
+        .await
+        .map_err(|e| map_err(kind, resource_id, "get_domain", e))?
+        .ok_or_else(|| {
+            map_err(
+                kind,
+                resource_id,
+                "domain_missing",
+                anyhow::anyhow!("domain {dom_id} not found"),
+            )
+        })?;
+    let principal = ensure_group_principal(system, own_id).await?;
+    let pid = principal.id().cloned().ok_or_else(|| {
+        map_err(
+            kind,
+            resource_id,
+            "principal_id_missing",
+            anyhow::anyhow!("principal id missing"),
+        )
+    })?;
+    let owners = domain
+        .get_owners_record_ids(system, valence::use_!(r"When **Gauge** sets up a **resource permission bundle**, we **read the owners of its domain** so the owners group is not added twice. Nobody sees this step; it only decides whether to write the owner edge."))
+        .await
+        .map_err(|e| map_err(kind, resource_id, "get_domain_owners", e))?;
+    if owners.contains(&pid) {
+        return Ok(());
+    }
+    domain
+        .relate_to_owner_record(&pid, system, valence::use_!(r"When **Gauge** sets up a **resource permission bundle**, we **write an owner edge** from its domain to the resource's owners group so the resource's owners can change its settings. Owners see the domain on its detail page."))
+        .await
+        .map_err(|e| map_err(kind, resource_id, "relate_domain_owner", e))
 }
 
 async fn ensure_owners_group(
@@ -256,6 +350,9 @@ async fn ensure_owners_group(
     if !existed {
         let now = Utc::now();
         let group = PermissionGroup::new(
+            None,
+            None,
+            None,
             format!("{display} owners"),
             Some("Maintain ACL owners for this resource".to_string()),
             now,
@@ -318,6 +415,10 @@ async fn grant_action_to_umbrellas(
 
 /// Idempotently ensure a Gauge permission domain, owners group, and action permissions
 /// for one resource.
+///
+/// The owners group is recorded as the domain's owner, so the resource's owners can change
+/// its settings. On a domain an owner restricted with [`super::set_umbrella_removed`], the
+/// kind's umbrella groups are not granted again.
 ///
 /// # Errors
 ///
@@ -394,7 +495,8 @@ where
         kind.prefix, resource_id
     );
 
-    let domain_rid = ensure_domain(&system, &kind, &resource_id, &dom_id, &display).await?;
+    let (domain_rid, umbrella_removed) =
+        ensure_domain(&system, &kind, &resource_id, &dom_id, &display).await?;
     ensure_owners_group(
         v,
         &system,
@@ -405,6 +507,7 @@ where
         &maintainer,
     )
     .await?;
+    ensure_domain_owned_by_owners_group(&system, &kind, &resource_id, &dom_id, &own_id).await?;
 
     let mut permission_names = HashMap::new();
     for action in actions {
@@ -419,7 +522,12 @@ where
             &maintainer,
         )
         .await?;
-        grant_action_to_umbrellas(&system, &kind, &resource_id, action, &own_id, &name).await?;
+        if umbrella_removed {
+            // An owner restricted this resource; keep the kind's umbrella groups off it.
+            grant_named_permission_to_group(&system, &own_id, &name).await?;
+        } else {
+            grant_action_to_umbrellas(&system, &kind, &resource_id, action, &own_id, &name).await?;
+        }
         permission_names.insert(action.as_str().to_string(), name);
     }
 
@@ -444,6 +552,11 @@ where
 /// hold the actions and grants the same actions to `grant_group_id`, so members
 /// of that group can use the resource through their own session without any
 /// elevation.
+///
+/// `grant_group_id` is also made an owner of the bundle's owners group, so the bundle has
+/// an owner and the group's owners can change who can act on the resource
+/// ([`super::set_principal_role`]) under their own session. Its role on the bundle reads as
+/// Owner (the default owner on the resource's access card).
 ///
 /// `actions` empty means the kind's default actions. Umbrella grants are not
 /// applied here, so a kind with [`UmbrellaPolicy::None`](super::UmbrellaPolicy)
@@ -508,14 +621,14 @@ where
         actions.to_vec()
     };
 
-    let domain_rid = ensure_domain(system, &kind, &resource_id, &dom_id, &display).await?;
+    let (domain_rid, _) = ensure_domain(system, &kind, &resource_id, &dom_id, &display).await?;
     if PermissionGroup::get(&own_id, system, valence::use_!(r"When a **host seeds a resource permission bundle for a group**, we **load the bundle's owners group** to see whether it already exists, so re-running the seed does not create a second one. Used only during host boot."))
         .await
         .map_err(|e| map_err(&kind, &resource_id, "get_owners_group", e))?
         .is_none()
     {
         let now = Utc::now();
-        let group = PermissionGroup::new(
+        let group = PermissionGroup::new(None, None, None,
             format!("{display} owners"),
             Some("Maintain ACL owners for this resource".to_string()),
             now,
@@ -526,6 +639,8 @@ where
             .await
             .map_err(|e| map_err(&kind, &resource_id, "upsert_owners_group", e))?;
     }
+    ensure_group_owned_by_group(system, &kind, &resource_id, &own_id, grant_group_id).await?;
+    ensure_domain_owned_by_owners_group(system, &kind, &resource_id, &dom_id, &own_id).await?;
 
     let mut permission_names = HashMap::new();
     for action in actions {

@@ -8,6 +8,39 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Lifecycle of a managed group (one with `managed_by` set), as the managing product reports it.
+///
+/// Stored as the group's `managed_status` text. An archived group keeps its grants and loses its
+/// members, so restoring it in the managing product restores access.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ManagedStatus {
+    /// The mirrored thing (a team) is live and the group follows its roster.
+    Active,
+    /// The mirrored thing is archived; the managing product has emptied the group.
+    Archived,
+}
+
+impl ManagedStatus {
+    /// Stored value: `active` or `archived`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Archived => "archived",
+        }
+    }
+
+    /// Parse a stored `managed_status` value; `None` for anything else.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "archived" => Some(Self::Archived),
+            _ => None,
+        }
+    }
+}
+
 /// Kind of principal a permission/group can be assigned to.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]

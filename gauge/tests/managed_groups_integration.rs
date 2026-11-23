@@ -9,9 +9,13 @@ use common::{
     record_pk_id, seed_group_with_owner, seed_super_user_group_with_member, seed_user, test_valence,
 };
 use gauge::generated::PermissionGroup;
+use gauge::resource_permissions::{
+    ensure_resource_permission_bundle, permission_name, roles::Role, set_principal_role, ActorId,
+    ResourceAction, ResourceKind, ResourcePermissionSpec,
+};
 use gauge::service;
 use gauge::super_user::{SUPER_USER_GROUP_ID, SUPER_USER_GROUP_NAME};
-use gauge::types::{HistoryEntryDto, PermissionGroupCreateInput};
+use gauge::types::{HistoryEntryDto, ManagedStatus, PermissionGroupCreateInput, PrincipalKind};
 use valence::{Actor, Model, Valence};
 
 async fn system() -> Valence {
@@ -257,10 +261,17 @@ async fn system_creates_managed_group_with_named_owner_happy() {
     let system = system().await;
     seed_user("alice", "alice@example.test", &system).await;
 
-    let group =
-        service::create_managed_group("team_ops", "Ops", "ops team", Some("alice"), &system)
-            .await
-            .expect("create managed group");
+    let group = service::create_managed_group(
+        "team_ops",
+        "Ops",
+        "ops team",
+        Some("alice"),
+        None,
+        None,
+        &system,
+    )
+    .await
+    .expect("create managed group");
     assert_eq!(record_pk_id(group.id()), "team_ops");
     assert_eq!(group.name(), "Ops");
     assert_eq!(
@@ -282,13 +293,20 @@ async fn create_managed_group_twice_changes_nothing_happy() {
     let system = system().await;
     seed_user("alice", "alice@example.test", &system).await;
 
-    service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system)
+    service::create_managed_group("team_ops", "Ops", "", Some("alice"), None, None, &system)
         .await
         .expect("first create");
-    let again =
-        service::create_managed_group("team_ops", "Other", "changed", Some("alice"), &system)
-            .await
-            .expect("second create returns existing");
+    let again = service::create_managed_group(
+        "team_ops",
+        "Other",
+        "changed",
+        Some("alice"),
+        None,
+        None,
+        &system,
+    )
+    .await
+    .expect("second create returns existing");
     assert_eq!(record_pk_id(again.id()), "team_ops");
     assert_eq!(again.name(), "Ops");
     assert_eq!(load(&system, "team_ops").await.name(), "Ops");
@@ -307,12 +325,12 @@ async fn managed_group_id_taken_by_another_owner_is_refused_sad() {
     let mallory = user(&system, "mallory");
 
     // A session user claims the id before the job runs.
-    service::create_managed_group("team_ops", "Squat", "", None, &mallory)
+    service::create_managed_group("team_ops", "Squat", "", None, None, None, &mallory)
         .await
         .expect("mallory creates team_ops");
 
     assert_validation(
-        &service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system)
+        &service::create_managed_group("team_ops", "Ops", "", Some("alice"), None, None, &system)
             .await
             .expect_err("job must not adopt a group alice doesn't own"),
     );
@@ -329,7 +347,7 @@ async fn session_user_owns_managed_group_by_default_happy() {
     seed_user("alice", "alice@example.test", &system).await;
     let alice = user(&system, "alice");
 
-    service::create_managed_group("alice_team", "Alice team", "", None, &alice)
+    service::create_managed_group("alice_team", "Alice team", "", None, None, None, &alice)
         .await
         .expect("session create");
     assert_eq!(
@@ -345,9 +363,17 @@ async fn create_managed_group_rejects_reserved_and_taken_names_sad() {
     seed_user("alice", "alice@example.test", &system).await;
 
     assert_validation(
-        &service::create_managed_group(SUPER_USER_GROUP_ID, "Fine", "", Some("alice"), &system)
-            .await
-            .expect_err("reserved id"),
+        &service::create_managed_group(
+            SUPER_USER_GROUP_ID,
+            "Fine",
+            "",
+            Some("alice"),
+            None,
+            None,
+            &system,
+        )
+        .await
+        .expect_err("reserved id"),
     );
     assert_validation(
         &service::create_managed_group(
@@ -355,17 +381,19 @@ async fn create_managed_group_rejects_reserved_and_taken_names_sad() {
             SUPER_USER_GROUP_NAME,
             "",
             Some("alice"),
+            None,
+            None,
             &system,
         )
         .await
         .expect_err("reserved name"),
     );
 
-    service::create_managed_group("first", "Taken", "", Some("alice"), &system)
+    service::create_managed_group("first", "Taken", "", Some("alice"), None, None, &system)
         .await
         .expect("first");
     assert_validation(
-        &service::create_managed_group("second", "Taken", "", Some("alice"), &system)
+        &service::create_managed_group("second", "Taken", "", Some("alice"), None, None, &system)
             .await
             .expect_err("name used by a different id"),
     );
@@ -381,7 +409,7 @@ async fn create_managed_group_rejects_reserved_and_taken_names_sad() {
 async fn system_managed_group_requires_owner_sad() {
     let system = system().await;
     assert_validation(
-        &service::create_managed_group("no_owner", "No owner", "", None, &system)
+        &service::create_managed_group("no_owner", "No owner", "", None, None, None, &system)
             .await
             .expect_err("System must name an owner"),
     );
@@ -395,7 +423,7 @@ async fn session_user_cannot_name_another_owner_sad() {
     let alice = user(&system, "alice");
 
     assert_not_authorized(
-        &service::create_managed_group("bob_team", "Bob team", "", Some("bob"), &alice)
+        &service::create_managed_group("bob_team", "Bob team", "", Some("bob"), None, None, &alice)
             .await
             .expect_err("alice names bob"),
     );
@@ -525,4 +553,216 @@ async fn owner_group_self_and_last_owner_refused_sad() {
             .expect_err("last owner"),
     );
     assert_eq!(owners(&system, &gid).await.len(), 1);
+}
+
+// ---- Groups another product manages ------------------------------------------------------
+
+const MANAGED_REFUSAL: &str =
+    "managed_group: members of this group come from polaron; change them there";
+
+/// A Polaron-style team group owned by `alice`, with `member` already in it via System.
+async fn seed_team_group(system: &Valence, member: &str) {
+    seed_user("alice", "alice@example.test", system).await;
+    seed_user(member, &format!("{member}@example.test"), system).await;
+    service::create_managed_group(
+        "polaron_team_ops",
+        "Ops team",
+        "",
+        Some("alice"),
+        Some("polaron"),
+        Some("team-ops"),
+        system,
+    )
+    .await
+    .expect("create team group");
+    service::add_group_member_user("polaron_team_ops", member, system)
+        .await
+        .expect("sync adds a member as System");
+}
+
+fn assert_managed_refusal(err: &anyhow::Error) {
+    assert_validation(err);
+    assert_eq!(err.to_string(), MANAGED_REFUSAL);
+}
+
+#[tokio::test]
+async fn managed_group_records_who_manages_it_happy() {
+    let system = system().await;
+    seed_team_group(&system, "dana").await;
+
+    let group = load(&system, "polaron_team_ops").await;
+    assert_eq!(group.managed_by().map(String::as_str), Some("polaron"));
+    assert_eq!(group.external_ref().map(String::as_str), Some("team-ops"));
+    assert_eq!(group.managed_status().map(String::as_str), Some("active"));
+    assert_eq!(
+        members(&system, "polaron_team_ops").await,
+        vec!["user:dana".to_string()]
+    );
+
+    // An ordinary managed-id group carries no management fields.
+    service::create_managed_group("plain", "Plain", "", Some("alice"), None, None, &system)
+        .await
+        .expect("plain group");
+    let plain = load(&system, "plain").await;
+    assert!(plain.managed_by().is_none());
+    assert!(plain.managed_status().is_none());
+}
+
+#[tokio::test]
+async fn managed_group_members_refused_for_owner_and_super_user_sad() {
+    let system = system().await;
+    seed_team_group(&system, "dana").await;
+    seed_user("erin", "erin@example.test", &system).await;
+    seed_user("root", "root@example.test", &system).await;
+    seed_super_user_group_with_member(&system, "root").await;
+    seed_group_with_owner(&system, "alice_child", "alice").await;
+
+    for actor in [user(&system, "alice"), user(&system, "root")] {
+        assert_managed_refusal(
+            &service::add_group_member_user("polaron_team_ops", "erin", &actor)
+                .await
+                .expect_err("add member"),
+        );
+        assert_managed_refusal(
+            &service::remove_group_member_user("polaron_team_ops", "dana", &actor)
+                .await
+                .expect_err("remove member"),
+        );
+        assert_managed_refusal(
+            &service::clear_group_members("polaron_team_ops", &actor)
+                .await
+                .expect_err("clear members"),
+        );
+    }
+    assert_managed_refusal(
+        &service::add_group_member_group(
+            "polaron_team_ops",
+            "alice_child",
+            &user(&system, "alice"),
+        )
+        .await
+        .expect_err("nest a group inside the team"),
+    );
+    assert_eq!(
+        members(&system, "polaron_team_ops").await,
+        vec!["user:dana".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn managed_group_members_follow_the_system_sync_happy() {
+    let system = system().await;
+    seed_team_group(&system, "dana").await;
+    seed_user("erin", "erin@example.test", &system).await;
+
+    service::add_group_member_user("polaron_team_ops", "erin", &system)
+        .await
+        .expect("System adds");
+    service::remove_group_member_user("polaron_team_ops", "dana", &system)
+        .await
+        .expect("System removes");
+    assert_eq!(
+        members(&system, "polaron_team_ops").await,
+        vec!["user:erin".to_string()]
+    );
+
+    // Archive: empty the group and mark it, then restore.
+    service::clear_group_members("polaron_team_ops", &system)
+        .await
+        .expect("System clears");
+    service::set_managed_group_status("polaron_team_ops", ManagedStatus::Archived, &system)
+        .await
+        .expect("archive");
+    assert!(members(&system, "polaron_team_ops").await.is_empty());
+    assert_eq!(
+        load(&system, "polaron_team_ops")
+            .await
+            .managed_status()
+            .map(String::as_str),
+        Some("archived")
+    );
+    service::set_managed_group_status("polaron_team_ops", ManagedStatus::Active, &system)
+        .await
+        .expect("restore");
+    assert_eq!(
+        load(&system, "polaron_team_ops")
+            .await
+            .managed_status()
+            .map(String::as_str),
+        Some("active")
+    );
+}
+
+#[tokio::test]
+async fn managed_group_status_is_system_only_sad() {
+    let system = system().await;
+    seed_team_group(&system, "dana").await;
+    service::create_managed_group("plain", "Plain", "", Some("alice"), None, None, &system)
+        .await
+        .expect("plain group");
+
+    assert_not_authorized(
+        &service::set_managed_group_status(
+            "polaron_team_ops",
+            ManagedStatus::Archived,
+            &user(&system, "alice"),
+        )
+        .await
+        .expect_err("owner can't speak for Polaron"),
+    );
+    assert_validation(
+        &service::set_managed_group_status("plain", ManagedStatus::Archived, &system)
+            .await
+            .expect_err("not managed"),
+    );
+    assert_eq!(
+        load(&system, "polaron_team_ops")
+            .await
+            .managed_status()
+            .map(String::as_str),
+        Some("active")
+    );
+}
+
+#[tokio::test]
+async fn owners_still_grant_and_nest_a_managed_group_happy() {
+    let system = system().await;
+    seed_team_group(&system, "dana").await;
+    seed_group_with_owner(&system, "alice_parent", "alice").await;
+    let alice = user(&system, "alice");
+
+    // Nest the team inside a group alice owns.
+    service::add_group_member_group("alice_parent", "polaron_team_ops", &alice)
+        .await
+        .expect("nest the team");
+    assert_eq!(
+        members(&system, "alice_parent").await,
+        vec!["permission_group:polaron_team_ops".to_string()]
+    );
+
+    // Grant the team a role on a resource alice owns; team members get it.
+    ensure_resource_permission_bundle(
+        &system,
+        ResourcePermissionSpec {
+            kind: ResourceKind::NucleusStack,
+            resource_id: "stk-1".into(),
+            display_name: "Stack 1".into(),
+            actions: vec![],
+            actor: ActorId::user_for_system(&system, "alice").expect("actor"),
+        },
+    )
+    .await
+    .expect("bundle");
+    set_principal_role(
+        &alice,
+        ResourceKind::NucleusStack,
+        "stk-1",
+        (PrincipalKind::Group, "polaron_team_ops"),
+        Role::Edit,
+    )
+    .await
+    .expect("grant the team Can edit");
+    let dana = user(&system, "dana");
+    let edit = permission_name(ResourceKind::NucleusStack, "stk-1", ResourceAction::Edit);
+    assert!(service::actor_can(&dana, &edit).await.expect("actor_can"));
 }

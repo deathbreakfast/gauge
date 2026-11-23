@@ -40,6 +40,9 @@ async fn ensure_standalone_group(
     }
     let now = Utc::now();
     let group = PermissionGroup::new(
+        None,
+        None,
+        None,
         display_name.to_string(),
         Some(description.to_string()),
         now,
@@ -53,7 +56,7 @@ async fn ensure_standalone_group(
     Ok(())
 }
 
-async fn ensure_group_principal(
+pub(super) async fn ensure_group_principal(
     system: &Valence,
     group_id: &str,
 ) -> Result<PermissionGroupPrincipal, ResourcePermissionError> {
@@ -231,7 +234,7 @@ async fn ensure_coarse_create_permission(
         let now = Utc::now();
         let domain = PermissionDomain::new(
             false,
-            None,
+            None, false,
             spec.domain_name.to_string(),
             Some(spec.domain_description.to_string()),
             now,

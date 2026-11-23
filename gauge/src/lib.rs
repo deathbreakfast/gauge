@@ -19,6 +19,10 @@
 //!   automatically, how that differs between secrets, apps, and stacks, and
 //!   what Super User can always do.
 //!   [Get started](#who-can-act-on-a-resource)
+//! - **Resource roles** — Can view, Can run, Can read unmasked, Can edit and Owner over one
+//!   resource, set per principal in one call, with a last-owner guard and a per-resource
+//!   switch that removes the kind's umbrella groups.
+//!   [Get started](#roles-and-restricting-one-resource)
 //! - **Bundle teardown** — Remove a resource's ACL when the resource goes away,
 //!   in the order the schema's Restrict edges require.
 //!   [Get started](#delete-a-resource-bundle)
@@ -32,7 +36,8 @@
 //!   owners group. Hosts call this at boot after schema inventory is linked.
 //!   [Get started](#app-permission-manifest-sync)
 //! - **Permission taxonomy CRUD** — Create and manage domains, permissions, and
-//!   groups (owners, nested membership) that back admin screens and grants.
+//!   groups (owners, nested membership) that back admin screens and grants, including
+//!   groups whose members another product manages.
 //!   [Get started](#domain-permission-and-group-crud)
 //! - **Grant and revoke** — Attach or remove direct user/group allow-list entries
 //!   on a permission, with history recorded for operators.
@@ -239,6 +244,7 @@
 //! | Owners-group member (`rp_owners_*`) | Every action on that one resource, including `Maintain` |
 //! | Holder of `{kind}.{id}.{Action}` | That one action on that one resource |
 //! | `gluon.app.*` / `nucleus.stack.*` umbrella groups | Kind-wide access on every resource of their kind |
+//! | A `KindWide` kind's viewers / editors / operators groups | Viewers: View. Editors: View, Run, Edit. Operators: also Delete, Reveal and Unmask. Never Maintain. Dropped from one resource by [`resource_permissions::set_umbrella_removed`] |
 //! | `neutrino.secret.viewers` / `.operators` | Nothing per-secret after umbrella narrowing (`UmbrellaPolicy::None`). Those groups previously received View, Reveal, Edit, and Delete on every secret |
 //! | Coarse `Create*` holders | May create new resources; no access to existing ones |
 //! | Super User (`super_user_group`) | Full maintainer access on every bundle of every kind, with no grant and no group membership. Privilege is pinned to the group id |
@@ -266,6 +272,31 @@
 //! );
 //! assert!(actor_can(&maintainer_v, &reveal).await?);
 //! assert!(!actor_can(&operator_v, &reveal).await?);
+//! ```
+//!
+//! ### Roles and restricting one resource
+//!
+//! People pick roles rather than single actions: Can view, Can run, Can read unmasked,
+//! Can edit and Owner, each a fixed set of the kind's actions
+//! ([`resource_permissions::roles`]). [`resource_permissions::set_principal_role`] gives a
+//! user, group or service user exactly one role on a resource and drops whatever else it held
+//! there; [`resource_permissions::remove_principal`] takes everything away. Owner means owning
+//! the resource's owners group. Both run as the caller, who needs Maintain on the resource,
+//! and both refuse to leave a resource with no owner
+//! ([`resource_permissions::ResourcePermissionError::LastOwner`]).
+//!
+//! [`resource_permissions::set_umbrella_removed`] closes one resource to its kind's umbrella
+//! groups and flags its domain, so the next `ensure` at boot keeps them off. Calling it with
+//! `false` grants them again.
+//!
+//! ```ignore
+//! use gauge::resource_permissions::{roles::Role, set_principal_role, set_umbrella_removed};
+//! use gauge::types::PrincipalKind;
+//!
+//! // As the signed-in owner: the ops team may run the job, and nobody else by default.
+//! set_principal_role(&session, CHRONON_JOB, "billing-rollup", (PrincipalKind::Group, "team_ops"), Role::Run)
+//!     .await?;
+//! set_umbrella_removed(&session, CHRONON_JOB, "billing-rollup", true).await?;
 //! ```
 //!
 //! Next: [Runtime access checks](#runtime-access-checks) or
@@ -420,7 +451,15 @@
 //! belonging to it, and [`service::clear_group_members`] to empty a group of its users, nested
 //! groups and service users in one call, for example when a team is archived. Owners are kept.
 //! Gauge counts an owner as holding what the group holds, so an owner keeps the group's
-//! grants either way; remove the ownership too if the creator should lose them. Next:
+//! grants either way; remove the ownership too if the creator should lose them.
+//!
+//! A product that mirrors its own groupings into Gauge (Polaron teams, say) creates each
+//! group with [`service::create_managed_group`], passing `managed_by` and its own id as
+//! `external_ref`. The group's members then come only from that product's sync, which starts
+//! as System: any other member edit is refused with
+//! `managed_group: members of this group come from {managed_by}; change them there`. Owners
+//! still grant the group permissions and nest it in other groups, and the sync records an
+//! archived or restored team with [`service::set_managed_group_status`]. Next:
 //! [Grant and revoke](#grant-and-revoke-allow-lists).
 //!
 //! ## Grant and revoke allow-lists

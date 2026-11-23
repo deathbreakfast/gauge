@@ -88,6 +88,7 @@ async fn ensure_domain(
     let created = PermissionDomain::new(
         false,
         None,
+        false,
         domain.name.clone(),
         if domain.description.trim().is_empty() {
             None
@@ -110,6 +111,9 @@ async fn ensure_owner_group(app_id: &str, system: &Valence) -> anyhow::Result<Pe
 
     let now = Utc::now();
     let group = PermissionGroup::new(
+        None,
+        None,
+        None,
         format!("{app_id} Manifest Owners"),
         Some("Auto-managed owners group for enum-first permission manifests".to_string()),
         now,
