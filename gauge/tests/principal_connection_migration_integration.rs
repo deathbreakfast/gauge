@@ -260,7 +260,10 @@ async fn migration_fails_when_legacy_user_edge_targets_missing_user_sad() -> any
 async fn seed_super_user_group(system: &Valence) -> anyhow::Result<()> {
     let super_group = gauge::generated::PermissionGroup::upsert(
         "super_user_group",
-        gauge::generated::PermissionGroup::new(None, None, None,
+        gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
             SUPER_USER_GROUP_NAME.to_string(),
             Some("super users".to_string()),
             Utc::now(),

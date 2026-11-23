@@ -126,7 +126,10 @@ pub async fn ensure_super_user_group(system: &Valence) -> anyhow::Result<Permiss
     let now = Utc::now();
     let created = PermissionGroup::upsert(
         SUPER_USER_GROUP_ID,
-        PermissionGroup::new(None, None, None,
+        PermissionGroup::new(
+            None,
+            None,
+            None,
             SUPER_USER_GROUP_NAME.to_string(),
             Some("Hard-coded singleton super-user group".to_string()),
             now,

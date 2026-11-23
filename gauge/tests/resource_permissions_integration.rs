@@ -833,6 +833,7 @@ async fn resource_permission_list_browsable_for_outsider_happy() -> anyhow::Resu
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // a deep group-nest fixture built in full, then the checks
 async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<()> {
     const DEPTH: usize = 5;
     /// Super-user probe + permission query + principals + nested group hops.
@@ -864,7 +865,10 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
         let gid = format!("nest_g{i}");
         let g = gauge::generated::PermissionGroup::upsert(
             &gid,
-            gauge::generated::PermissionGroup::new(None, None, None,
+            gauge::generated::PermissionGroup::new(
+                None,
+                None,
+                None,
                 format!("Nest {i}"),
                 None,
                 chrono::Utc::now(),
@@ -975,7 +979,10 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
     // Cyclic group membership must terminate (visited set), not hang.
     let g1 = gauge::generated::PermissionGroup::upsert(
         "cycle_g1",
-        gauge::generated::PermissionGroup::new(None, None, None,
+        gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
             "Cycle 1".into(),
             None,
             chrono::Utc::now(),
@@ -987,7 +994,10 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
     .await?;
     let g2 = gauge::generated::PermissionGroup::upsert(
         "cycle_g2",
-        gauge::generated::PermissionGroup::new(None, None, None,
+        gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
             "Cycle 2".into(),
             None,
             chrono::Utc::now(),
@@ -1220,7 +1230,10 @@ async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()>
     // Duplicate display-name group confers nothing.
     let fake = gauge::generated::PermissionGroup::upsert(
         "fake_super_display_only",
-        gauge::generated::PermissionGroup::new(None, None, None,
+        gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
             gauge::super_user::SUPER_USER_GROUP_NAME.to_string(),
             None,
             chrono::Utc::now(),
@@ -1259,7 +1272,15 @@ async fn group_owned_bundle_lets_member_reveal_without_elevation_and_denies_stra
     let now = chrono::Utc::now();
     gauge::generated::PermissionGroup::upsert(
         group_id,
-        gauge::generated::PermissionGroup::new(None, None, None, "Delivery admins".into(), None, now, now)?,
+        gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
+            "Delivery admins".into(),
+            None,
+            now,
+            now,
+        )?,
         &system,
         valence::use_!(r"**Test:** Fixture **Permission Group** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )

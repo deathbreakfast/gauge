@@ -35,7 +35,8 @@ async fn seed_permission_owned_by_group(
         "domain_policy",
         PermissionDomain::new(
             false,
-            None, false,
+            None,
+            false,
             "Privacy Policy Domain".to_string(),
             Some("domain for privacy policy tests".to_string()),
             Utc::now(),
@@ -278,7 +279,8 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
         "domain_policy",
         PermissionDomain::new(
             false,
-            None, false,
+            None,
+            false,
             "Privacy Policy Domain".to_string(),
             Some("domain for privacy policy tests".to_string()),
             Utc::now(),

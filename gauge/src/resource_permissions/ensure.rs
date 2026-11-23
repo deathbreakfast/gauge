@@ -225,7 +225,8 @@ async fn ensure_domain(
         let now = Utc::now();
         let d = PermissionDomain::new(
             true,
-            Some(resource_id.to_string()), false,
+            Some(resource_id.to_string()),
+            false,
             display.to_string(),
             Some(format!("Resource permissions for {display}")),
             now,
@@ -628,7 +629,10 @@ where
         .is_none()
     {
         let now = Utc::now();
-        let group = PermissionGroup::new(None, None, None,
+        let group = PermissionGroup::new(
+            None,
+            None,
+            None,
             format!("{display} owners"),
             Some("Maintain ACL owners for this resource".to_string()),
             now,
