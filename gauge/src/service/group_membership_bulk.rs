@@ -85,6 +85,7 @@ fn member_from_edge(principal: RecordId) -> Member {
         Some(PrincipalKind::User) => "user:",
         Some(PrincipalKind::Group) => "permission_group:",
         Some(PrincipalKind::ServiceUser) => SERVICE_USER_PREFIX,
+        Some(PrincipalKind::Team) => "team:",
         None => "",
     };
     let id = row_id.strip_prefix(prefix).unwrap_or(&row_id).to_string();

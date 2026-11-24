@@ -15,6 +15,8 @@
 //!   System (boot, Chronon).
 //! - Direct permission grants and revokes for service users, gated on the caller seeing the
 //!   service user (grant) and editing the permission.
+//! - Direct permission grants and revokes for teams owned by another product, with
+//!   membership read at check time through [`crate::teams::TeamMembershipProvider`].
 //! - Runtime access checks (`actor_can`, `user_can`) across direct and inherited grants.
 //! - Every user holding a permission (`list_permission_holders`), for fan-out by System jobs,
 //!   super users, the permission's editors, and service users granted the lookup permission.
@@ -65,9 +67,10 @@ pub(crate) use helpers::raw_table_rows;
 pub use holders::list_permission_holders;
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
-    grant_permission_to_group, grant_permission_to_service_user_checked, grant_permission_to_user,
-    list_groups, list_permissions, revoke_permission_from_group,
-    revoke_permission_from_service_user, revoke_permission_from_user, update_permission,
+    grant_permission_to_group, grant_permission_to_service_user_checked, grant_permission_to_team,
+    grant_permission_to_user, list_groups, list_permissions, revoke_permission_from_group,
+    revoke_permission_from_service_user, revoke_permission_from_team, revoke_permission_from_user,
+    update_permission,
 };
 pub use requests::{
     actor_can_view_history_subject, create_permission_request, decide_permission_request,

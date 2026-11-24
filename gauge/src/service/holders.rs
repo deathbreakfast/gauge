@@ -17,7 +17,9 @@ use super::GaugeServiceError;
 ///
 /// A user holds the permission when it is granted straight to them, or to a group they
 /// own or are a member of, at any depth of nested groups (the same rule as
-/// [`crate::service::user_can`]). Service users on the grant graph are not listed. The ids
+/// [`crate::service::user_can`]). Service users on the grant graph are not listed, and a
+/// grant to a team is not expanded into its members, since a roster is only as visible as
+/// the reader's own access to it. The ids
 /// come back sorted, without duplicates and without the `user:` table prefix. A blank or
 /// unknown name gives an empty list.
 ///

@@ -190,3 +190,11 @@ required-features = ["ssr"]
 [[test]]
 name = "permission_holders_integration"
 required-features = ["ssr"]
+
+[[test]]
+name = "team_principal_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "team_principal_no_provider"
+required-features = ["ssr"]

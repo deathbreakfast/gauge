@@ -18,6 +18,9 @@ pub enum PrincipalKind {
     Group,
     /// A Lepton service user (non-human). Only ever a group member.
     ServiceUser,
+    /// A team owned by another product (Polaron), resolved at check time through the
+    /// registered [`TeamMembershipProvider`](crate::teams::TeamMembershipProvider).
+    Team,
 }
 
 /// Lightweight reference to a principal (user, group, or service user) for display in UI lists.

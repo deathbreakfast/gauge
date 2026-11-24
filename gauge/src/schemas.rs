@@ -51,6 +51,7 @@ pub fn ensure_inventory_linked() {
         std::any::type_name::<crate::generated::PermissionUserPrincipal>(),
         std::any::type_name::<crate::generated::PermissionGroupPrincipal>(),
         std::any::type_name::<crate::generated::PermissionServiceUserPrincipal>(),
+        std::any::type_name::<crate::generated::PermissionTeamPrincipal>(),
     );
 }
 
