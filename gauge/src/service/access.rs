@@ -7,8 +7,8 @@ use crate::types::{PermissionRequestTargetKind, PrincipalKind};
 
 use super::helpers::{
     current_user_id, domain_has_owner_user, get_group_principal_raw, get_group_raw,
-    get_permission_raw, get_team_principal_raw, get_user_principal_raw, group_has_owner_user,
-    group_has_user, permissions_named, principal_kind_from_record, user_id_candidates,
+    get_permission_raw, get_user_principal_raw, group_has_owner_user, group_has_user,
+    permissions_named, principal_kind_from_record, user_id_candidates,
 };
 
 /// `true` when the current actor is a super user or an owner (direct or nested) of `group`.
@@ -109,15 +109,6 @@ pub async fn permission_allows_user(
                         if group_has_user(&group, user_ids, v).await? {
                             return Ok(true);
                         }
-                    }
-                }
-            }
-            // Membership is read from the team's product as the checking session; no
-            // provider, or a team that session can't read, matches nobody.
-            Some(PrincipalKind::Team) => {
-                if let Some(principal) = get_team_principal_raw(&principal_id, v).await? {
-                    if crate::teams::team_has_member(principal.team_id(), user_ids, v).await? {
-                        return Ok(true);
                     }
                 }
             }

@@ -1,4 +1,4 @@
-//! Search-source registration for permission principal pickers (users, groups and teams).
+//! Search-source registration for permission principal pickers (users and groups).
 
 #![allow(missing_docs)]
 
@@ -18,12 +18,6 @@ uf_product_macros::define_search_sources! {
             label: "Permission Groups",
             description: "Searches permission-group principals",
             provider: PermissionGroupSearchSource
-        },
-        Team => {
-            id: "team_search_source",
-            label: "Teams",
-            description: "Searches teams from the registered team provider",
-            provider: TeamSearchSource
         }
     }
 }
@@ -148,45 +142,6 @@ impl uf_search_core::SearchSourceProvider for PermissionGroupSearchSource {
                 })
                 .collect::<Vec<_>>();
             Ok(out)
-        })
-    }
-}
-
-/// [`uf_search_core::SearchSourceProvider`] searching teams as the viewer.
-///
-/// Asks the registered [`TeamMembershipProvider`](crate::teams::TeamMembershipProvider). Only
-/// teams the viewer can read come back; with no provider registered the list is empty.
-#[cfg(feature = "ssr")]
-pub struct TeamSearchSource;
-
-#[cfg(feature = "ssr")]
-impl uf_search_core::SearchSourceProvider for TeamSearchSource {
-    fn query<'a>(
-        &'a self,
-        v: &'a valence::Valence,
-        query_text: &'a str,
-        max_results: u32,
-    ) -> uf_search_core::SearchSourceFuture<'a> {
-        Box::pin(async move {
-            let Some(provider) = crate::teams::provider() else {
-                return Ok(Vec::new());
-            };
-            let teams = provider
-                .search_teams(query_text, max_results, v)
-                .await
-                .map_err(|e| uf_search_core::SearchSourceError::msg(format!("{e:#}")))?;
-            Ok(teams
-                .into_iter()
-                .take(max_results as usize)
-                .map(|team| uf_search_core::SearchSourceItem {
-                    source_id: PermissionSearchSourceId::Team.as_str().to_string(),
-                    id: team.id,
-                    title: team.name,
-                    description: Some("Team".to_string()),
-                    kind: "team".to_string(),
-                    image_url: None,
-                })
-                .collect())
         })
     }
 }

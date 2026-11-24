@@ -8,12 +8,11 @@ use crate::types::{
 
 use super::access::{can_edit_group, can_edit_permission, has_permission, permission_allows_user};
 use super::helpers::{
-    current_user_id, ensure_group_principal, ensure_team_principal, ensure_user_principal,
-    get_domain_raw, get_group_raw, get_permission_raw, get_team_principal_raw,
-    get_user_by_actor_id, group_has_user, permissions_named, persist_history_entry,
-    principal_ref_from_record, record_pk_id, redact_user_principal_label,
+    current_user_id, ensure_group_principal, ensure_user_principal, get_domain_raw, get_group_raw,
+    get_permission_raw, get_user_by_actor_id, group_has_user, permissions_named,
+    persist_history_entry, principal_ref_from_record, record_pk_id, redact_user_principal_label,
     require_actor_controls_owner_group, require_model_id, require_raw_record, require_user_id,
-    resolve_or_create_default_owner_group, team_principal_id, user_id_candidates,
+    resolve_or_create_default_owner_group, user_id_candidates,
 };
 
 /// Create a new permission under the given domain and owners group (or the actor's
@@ -440,113 +439,6 @@ pub async fn revoke_permission_from_group(
         vec![HistoryDiffItemDto {
             field: "granted_groups".to_string(),
             old_value: serde_json::Value::String(group_id.to_string()),
-            new_value: serde_json::Value::Null,
-        }],
-    )
-    .await?;
-    Ok(())
-}
-
-/// Grant `permission_id` to a team owned by another product (owner or super-user only).
-///
-/// The grant points at a team principal, so membership is read from the team's product each
-/// time the permission is checked: people who join later are covered and people who leave
-/// lose access on their next check. The caller must be able to edit the permission and to
-/// read the team through the registered [`TeamMembershipProvider`](crate::teams::TeamMembershipProvider),
-/// as their own session. Records history.
-///
-/// # Errors
-///
-/// [`GaugeServiceError`](super::GaugeServiceError): `NotAuthorized` when the caller can't edit
-/// the permission; `NotFound` when no provider is registered or the caller can't read the
-/// team. Valence failures otherwise.
-pub async fn grant_permission_to_team(
-    permission_id: &str,
-    team_id: &str,
-    v: &Valence,
-) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
-    let team_id = team_id.trim();
-    let permission = get_permission_raw(permission_id, v)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission not found: {permission_id}"))?;
-    if !can_edit_permission(&permission, v).await? {
-        return Err(super::GaugeServiceError::not_authorized("edit permission").into());
-    }
-    let readable = match crate::teams::provider() {
-        Some(provider) if !team_id.is_empty() => provider.team_name(team_id, v).await?.is_some(),
-        _ => false,
-    };
-    if !readable {
-        return Err(super::GaugeServiceError::not_found("team", team_id).into());
-    }
-
-    let principal = ensure_team_principal(team_id, v).await?;
-    let principal_id = require_model_id(principal.id(), "principal")?;
-    if permission_has_allowed_principal(&permission, &principal_id, v).await? {
-        return Ok(());
-    }
-    permission
-        .relate_to_allowed_principal_record(&principal_id, v, valence::use_!(r"When an operator **grants a permission to a team** in **Gauge**, we **write the allowed-principal edge** so the team's members may use the permission, as the team's own product reports them at check time. Operators see the team on the permission's allow list."))
-        .await?;
-    persist_history_entry(
-        v,
-        "permission",
-        permission_id.to_string(),
-        "grant_team",
-        Some(actor_user_id),
-        vec![HistoryDiffItemDto {
-            field: "granted_teams".to_string(),
-            old_value: serde_json::Value::Null,
-            new_value: serde_json::Value::String(team_id.to_string()),
-        }],
-    )
-    .await?;
-    Ok(())
-}
-
-/// Revoke `permission_id` from a team (owner or super-user only). Revoking a grant the team
-/// doesn't hold changes nothing. Records history.
-///
-/// The team doesn't have to be readable, so an editor can remove a grant to a team they can't
-/// see or one that has since been deleted.
-///
-/// # Errors
-///
-/// [`GaugeServiceError::NotAuthorized`](super::GaugeServiceError) when the caller can't edit
-/// the permission. Valence failures otherwise.
-pub async fn revoke_permission_from_team(
-    permission_id: &str,
-    team_id: &str,
-    v: &Valence,
-) -> anyhow::Result<()> {
-    let actor_user_id = require_user_id(v)?;
-    let team_id = team_id.trim();
-    let permission = get_permission_raw(permission_id, v)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Permission not found: {permission_id}"))?;
-    if !can_edit_permission(&permission, v).await? {
-        return Err(super::GaugeServiceError::not_authorized("edit permission").into());
-    }
-    let Some(principal) = get_team_principal_raw(&team_principal_id(team_id), v).await? else {
-        return Ok(());
-    };
-    let principal_id = require_model_id(principal.id(), "principal")?;
-    if !permission_has_allowed_principal(&permission, &principal_id, v).await? {
-        return Ok(());
-    }
-    permission
-        .unrelate_from_allowed_principal_record(&principal_id, v, valence::use_!(r"When an operator **revokes a permission from a team** in **Gauge**, we **delete the allowed-principal edge** so the team's members no longer hold the grant through it. Operators see the updated allow list on the permission detail."))
-        .await?;
-    persist_history_entry(
-        v,
-        "permission",
-        permission_id.to_string(),
-        "revoke_team",
-        Some(actor_user_id),
-        vec![HistoryDiffItemDto {
-            field: "granted_teams".to_string(),
-            old_value: serde_json::Value::String(team_id.to_string()),
             new_value: serde_json::Value::Null,
         }],
     )

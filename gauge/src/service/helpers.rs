@@ -3,7 +3,7 @@ use valence::{Model, RecordId, Valence};
 
 use crate::generated::{
     Permission, PermissionDomain, PermissionGroup, PermissionGroupPrincipal, PermissionRequest,
-    PermissionRequestStatus, PermissionTeamPrincipal, PermissionUserPrincipal,
+    PermissionRequestStatus, PermissionUserPrincipal,
 };
 use crate::super_user::actor_is_super_user;
 use crate::types::{
@@ -267,19 +267,11 @@ pub fn group_principal_id(group_id: &str) -> String {
     format!("permission_group:{group_id}")
 }
 
-/// Table holding team principals (see [`crate::teams`]).
-pub const TEAM_PRINCIPAL_TABLE: &str = "permission_team_principal";
-
-pub fn team_principal_id(team_id: &str) -> String {
-    format!("team:{team_id}")
-}
-
 pub fn principal_kind_from_record(r: &RecordId) -> Option<PrincipalKind> {
     match r.table() {
         "permission_user_principal" => Some(PrincipalKind::User),
         "permission_group_principal" => Some(PrincipalKind::Group),
         crate::service_users::SERVICE_USER_PRINCIPAL_TABLE => Some(PrincipalKind::ServiceUser),
-        TEAM_PRINCIPAL_TABLE => Some(PrincipalKind::Team),
         _ => None,
     }
 }
@@ -362,60 +354,6 @@ pub async fn ensure_group_principal(
     Ok(PermissionGroupPrincipal::upsert(&principal_id, principal, lookup, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Group Principal** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?)
 }
 
-/// Read a team principal row by its record id, with a raw backend read on `v`.
-pub async fn get_team_principal_raw(
-    id: &str,
-    v: &Valence,
-) -> anyhow::Result<Option<PermissionTeamPrincipal>> {
-    match crate::actor_can_raw::raw_get_json(TEAM_PRINCIPAL_TABLE, id, v).await? {
-        None => Ok(None),
-        Some(row) => Ok(Some(serde_json::from_value(row).map_err(|e| {
-            anyhow::anyhow!("decode permission_team_principal: {e}")
-        })?)),
-    }
-}
-
-/// The team principal row for `team_id`, created on first use.
-pub async fn ensure_team_principal(
-    team_id: &str,
-    v: &Valence,
-) -> anyhow::Result<PermissionTeamPrincipal> {
-    let principal_id = team_principal_id(team_id);
-    if let Some(existing) = get_team_principal_raw(&principal_id, v).await? {
-        return Ok(existing);
-    }
-    let principal = PermissionTeamPrincipal::new(team_id.to_string(), team_id.to_string())?;
-    Ok(PermissionTeamPrincipal::upsert(&principal_id, principal, v, valence::use_!(r"When an operator **grants a permission to a team** in **Gauge**, we **save a team principal** holding only the team's id so the grant can point at it. Membership is read from the team's own product at check time; no roster is copied.")).await?)
-}
-
-/// Label shown for a team principal the viewer can't read.
-pub const HIDDEN_TEAM_LABEL: &str = "Hidden team";
-
-async fn team_principal_ref(
-    principal_id: &str,
-    v: &Valence,
-) -> anyhow::Result<Option<PrincipalRefDto>> {
-    let Some(principal) = get_team_principal_raw(principal_id, v).await? else {
-        return Ok(None);
-    };
-    let team_id = principal.team_id().clone();
-    if team_id.is_empty() {
-        return Ok(None);
-    }
-    // No provider, a read error or an unreadable team all show as a hidden item. The id
-    // stays so an editor can still revoke the grant.
-    let name = match crate::teams::provider() {
-        Some(provider) => provider.team_name(&team_id, v).await.ok().flatten(),
-        None => None,
-    };
-    Ok(Some(PrincipalRefDto {
-        kind: PrincipalKind::Team,
-        id: team_id,
-        label: name.unwrap_or_else(|| HIDDEN_TEAM_LABEL.to_string()),
-        owner_label: None,
-    }))
-}
-
 pub async fn principal_ref_from_record(
     rid: &RecordId,
     v: &Valence,
@@ -464,7 +402,6 @@ pub async fn principal_ref_from_record(
             }))
         }
         Some(PrincipalKind::ServiceUser) => service_user_principal_ref(&principal_id, v).await,
-        Some(PrincipalKind::Team) => team_principal_ref(&principal_id, v).await,
         None => Ok(None),
     }
 }
@@ -566,7 +503,7 @@ pub fn redact_user_principal_label(
             owner_label: None,
             ..reference
         },
-        PrincipalKind::Group | PrincipalKind::Team => reference,
+        PrincipalKind::Group => reference,
     }
 }
 
@@ -698,7 +635,7 @@ pub async fn group_has_user(
                     }
                 }
                 // Service users never count as people: they neither own nor inherit user checks.
-                Some(PrincipalKind::ServiceUser | PrincipalKind::Team) | None => {}
+                Some(PrincipalKind::ServiceUser) | None => {}
             }
         }
 
@@ -725,7 +662,7 @@ pub async fn group_has_user(
                     }
                 }
                 // Service users never count as people: they neither own nor inherit user checks.
-                Some(PrincipalKind::ServiceUser | PrincipalKind::Team) | None => {}
+                Some(PrincipalKind::ServiceUser) | None => {}
             }
         }
     }
@@ -767,7 +704,7 @@ pub async fn group_has_owner_user(
                     }
                 }
                 // Service users never count as people: they neither own nor inherit user checks.
-                Some(PrincipalKind::ServiceUser | PrincipalKind::Team) | None => {}
+                Some(PrincipalKind::ServiceUser) | None => {}
             }
         }
     }
@@ -809,7 +746,7 @@ pub async fn domain_has_owner_user(
                 }
             }
             // Service users never count as people: they neither own nor inherit user checks.
-                Some(PrincipalKind::ServiceUser | PrincipalKind::Team) | None => {}
+                Some(PrincipalKind::ServiceUser) | None => {}
         }
     }
     Ok(false)

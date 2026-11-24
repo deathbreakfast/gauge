@@ -453,14 +453,6 @@
 //!
 //! Unauthorized editors and missing permission ids return `anyhow` errors.
 //! Group variants: `grant_permission_to_group` / `revoke_permission_from_group`.
-//!
-//! A permission can also go to a team owned by another product with
-//! `grant_permission_to_team` / `revoke_permission_from_team`. Gauge stores only the team id
-//! and asks the product's registered [`teams::TeamMembershipProvider`] at check time, as the
-//! checking session, so the grant follows the roster. With no provider registered a team
-//! grant matches nobody. To list the resources of a kind the caller can act on in one call,
-//! use [`resource_permissions::actor_resource_ids_with_any`].
-//!
 //! Next: [Permission request and review](#permission-request-and-review).
 //!
 //! ## Permission request and review
@@ -830,5 +822,3 @@ pub mod service_users;
 pub mod side_effects;
 #[cfg(feature = "ssr")]
 pub mod super_user;
-#[cfg(feature = "ssr")]
-pub mod teams;

@@ -193,15 +193,6 @@ async fn permission_allows_user_raw(
                     }
                 }
             }
-            crate::service::helpers::TEAM_PRINCIPAL_TABLE => {
-                if let Some(principal) =
-                    crate::service::helpers::get_team_principal_raw(&principal_id, v).await?
-                {
-                    if crate::teams::team_has_member(principal.team_id(), user_ids, v).await? {
-                        return Ok(true);
-                    }
-                }
-            }
             _ => {}
         }
     }

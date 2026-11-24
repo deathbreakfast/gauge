@@ -11,8 +11,8 @@ use crate::generated::PermissionDomain;
 ///
 /// Use it to build a candidate list without one check per row, for example the
 /// organizations a user may pick in a "New team" form (`[Edit, Maintain]`). Grants count
-/// the same way as in [`crate::service::actor_can`]: direct grants, grants through groups
-/// at any depth (umbrella groups included), and grants to a team the actor is on.
+/// the same way as in [`crate::service::actor_can`]: direct grants and grants through groups
+/// at any depth, umbrella groups included.
 ///
 /// - System actors and super users get every resource of the kind that has a bundle.
 /// - A registered service user gets the resources it holds an action on through its groups
