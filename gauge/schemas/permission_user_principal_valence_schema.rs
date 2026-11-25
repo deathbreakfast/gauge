@@ -48,6 +48,8 @@ valence_schema! {
                 table: "user",
                 cardinality: HasOne,
                 required: true,
+                // The principal goes with its user; the deletion DAG then drops every
+                // member, owner and allowed-principal edge that points at it.
                 on_delete: Cascade,
                 model: "lepton::generated::User",
             },

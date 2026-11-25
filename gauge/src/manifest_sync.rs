@@ -144,7 +144,7 @@ async fn ensure_permission(
         return Ok(());
     }
 
-    let created_by = RecordId::new("user", "system");
+    let created_by = Some(RecordId::new("user", "system"));
     let owners_group_thing = owners_group
         .id()
         .cloned()
