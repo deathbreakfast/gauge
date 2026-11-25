@@ -63,14 +63,13 @@ pub async fn actor_resource_ids_with_any(
     }
 
     let mut out = Vec::new();
-    if let Some(service_user) = service_user {
+    if service_user.is_some() {
+        // `actor_can` makes the service-user decision and logs and records it, so this path
+        // leaves the same audit and Spectra trail as a direct check.
         for resource_id in candidates {
             for action in actions {
                 let name = permission_name(kind, &resource_id, *action);
-                let decision =
-                    crate::service_users::access::service_user_decision(v, &service_user, &name)
-                        .await?;
-                if decision.allowed() {
+                if crate::service::actor_can(v, &name).await? {
                     out.push(resource_id);
                     break;
                 }
