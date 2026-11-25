@@ -1478,3 +1478,167 @@ async fn app_admin_group_seed_refuses_session_actor_and_unsynced_permission_sad(
     assert!(err.to_string().contains("permission_missing"), "{err}");
     Ok(())
 }
+
+/// Put `user_id` in the existing group `group_id` (fixture arrange as System).
+async fn add_member_as_system(
+    system: &valence::Valence,
+    group_id: &str,
+    user_id: &str,
+) -> anyhow::Result<()> {
+    let group = gauge::generated::PermissionGroup::get(group_id, system, valence::use_!(r"**Test:** Fixture **Permission Group** load for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?
+        .expect("group");
+    let user = lepton::generated::User::get(user_id, system, valence::use_!(r"**Test:** Fixture **User** load for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?
+        .expect("user");
+    let principal = gauge::generated::PermissionUserPrincipal::upsert(
+        &format!("user:{user_id}"),
+        gauge::generated::PermissionUserPrincipal::new(
+            user.id().expect("id").clone(),
+            user_id.to_string(),
+        )?,
+        system,
+        valence::use_!(r"**Test:** Fixture **Permission User Principal** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    group
+        .relate_to_member_record(principal.id().expect("pid"), system, valence::use_!(r"**Test:** Fixture member-edge relate for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
+        .await?;
+    Ok(())
+}
+
+async fn ensure_bundle(
+    system: &valence::Valence,
+    kind: ResourceKind,
+    resource_id: &str,
+    maintainer: &str,
+) -> anyhow::Result<()> {
+    ensure_resource_permission_bundle(
+        system,
+        ResourcePermissionSpec {
+            kind,
+            resource_id: resource_id.into(),
+            display_name: resource_id.into(),
+            actions: vec![],
+            actor: ActorId::user_for_system(system, maintainer).expect("actor"),
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn actor_resource_ids_counts_maintain_direct_and_group_grants_happy() -> anyhow::Result<()> {
+    use gauge::resource_permissions::{actor_resource_ids_with_any, permission_record_id};
+
+    let system = system_valence().await;
+    seed_gluon_catalog(&system).await?;
+    for id in ["ari_m1", "ari_m2", "ari_stranger"] {
+        seed_user(id, &format!("{id}@example.test"), &system).await;
+    }
+    ensure_bundle(&system, ResourceKind::GluonApp, "app-a", "ari_m1").await?;
+    for id in ["app-b", "app-c", "app-d"] {
+        ensure_bundle(&system, ResourceKind::GluonApp, id, "ari_m2").await?;
+    }
+    // Same maintainer on another kind whose prefix extends this one's.
+    ensure_bundle(&system, ResourceKind::GluonAppSet, "app-e", "ari_m1").await?;
+
+    let m2 = user_valence(&system, "ari_m2");
+    service::grant_permission_to_user(
+        &permission_record_id(ResourceKind::GluonApp, "app-c", ResourceAction::Edit),
+        "ari_m1",
+        &m2,
+    )
+    .await?;
+    let now = chrono::Utc::now();
+    gauge::generated::PermissionGroup::upsert(
+        "ari_editors",
+        gauge::generated::PermissionGroup::new("ARI editors".into(), None, now, now)?,
+        &system,
+        valence::use_!(r"**Test:** Fixture **Permission Group** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
+    )
+    .await?;
+    add_member_as_system(&system, "ari_editors", "ari_m1").await?;
+    service::grant_permission_to_group(
+        &permission_record_id(ResourceKind::GluonApp, "app-d", ResourceAction::Edit),
+        "ari_editors",
+        &m2,
+    )
+    .await?;
+
+    let editable = [ResourceAction::Edit, ResourceAction::Maintain];
+    let m1 = user_valence(&system, "ari_m1");
+    assert_eq!(
+        actor_resource_ids_with_any(&m1, ResourceKind::GluonApp, &editable).await?,
+        vec![
+            "app-a".to_string(),
+            "app-c".to_string(),
+            "app-d".to_string()
+        ],
+    );
+    assert_eq!(
+        actor_resource_ids_with_any(&m1, ResourceKind::GluonAppSet, &editable).await?,
+        vec!["app-e".to_string()],
+    );
+    assert!(
+        actor_resource_ids_with_any(&m1, ResourceKind::GluonApp, &[])
+            .await?
+            .is_empty()
+    );
+    assert_eq!(
+        actor_resource_ids_with_any(&system, ResourceKind::GluonApp, &editable).await?,
+        vec!["app-a", "app-b", "app-c", "app-d"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>(),
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn actor_resource_ids_counts_umbrella_grants_and_denies_strangers_sad() -> anyhow::Result<()>
+{
+    use gauge::resource_permissions::actor_resource_ids_with_any;
+
+    let system = system_valence().await;
+    seed_nucleus_catalog(&system).await?;
+    for id in ["ari_owner", "ari_viewer", "ari_nobody"] {
+        seed_user(id, &format!("{id}@example.test"), &system).await;
+    }
+    for id in ["stk-1", "stk-2"] {
+        ensure_bundle(&system, ResourceKind::NucleusStack, id, "ari_owner").await?;
+    }
+    add_member_as_system(&system, "nucleus.stack.viewers", "ari_viewer").await?;
+
+    let viewer = user_valence(&system, "ari_viewer");
+    assert_eq!(
+        actor_resource_ids_with_any(&viewer, ResourceKind::NucleusStack, &[ResourceAction::View])
+            .await?,
+        vec!["stk-1".to_string(), "stk-2".to_string()],
+    );
+    assert!(actor_resource_ids_with_any(
+        &viewer,
+        ResourceKind::NucleusStack,
+        &[ResourceAction::Edit, ResourceAction::Maintain],
+    )
+    .await?
+    .is_empty());
+
+    let nobody = user_valence(&system, "ari_nobody");
+    assert!(actor_resource_ids_with_any(
+        &nobody,
+        ResourceKind::NucleusStack,
+        &[ResourceAction::View]
+    )
+    .await?
+    .is_empty());
+    let anon = system.with_actor(Actor::Anonymous);
+    assert!(actor_resource_ids_with_any(
+        &anon,
+        ResourceKind::NucleusStack,
+        &[ResourceAction::View]
+    )
+    .await?
+    .is_empty());
+    Ok(())
+}

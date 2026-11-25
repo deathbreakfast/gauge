@@ -31,6 +31,7 @@
 //! | Revoke standing umbrella grants | [`crate::resource_permissions::revoke_umbrella_grants`] |
 //! | Typed host-wiring errors | [`crate::resource_permissions::ResourcePermissionError`] |
 //! | Permission name for `actor_can` | [`crate::resource_permissions::permission_name`] |
+//! | Resources of a kind the caller can act on | [`crate::resource_permissions::actor_resource_ids_with_any`] |
 //! | Per-kind umbrella grants | [`crate::resource_permissions::UmbrellaPolicy`] / [`ResourceKind::umbrella_policy`] |
 //! | Declare a product-owned kind | [`crate::resource_permissions::ResourceKindDescriptor`] |
 //! | Coarse create privacy type | [`crate::resource_permissions::StaticPermissionGate`] |
@@ -83,6 +84,7 @@
 //! Gauge publish can retire the enum once those consumers migrate.
 
 mod actor_id;
+mod actor_resources;
 mod default_groups;
 mod ensure;
 mod error;
@@ -94,6 +96,7 @@ mod revoke_umbrella_grants;
 mod spec;
 
 pub use actor_id::ActorId;
+pub use actor_resources::actor_resource_ids_with_any;
 pub use default_groups::{
     ensure_group_granted_permission, seed_resource_kind_catalog, KindDefaultGroups,
 };
