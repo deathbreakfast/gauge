@@ -1,13 +1,48 @@
 use async_trait::async_trait;
 use std::sync::Once;
 
-use uf_notifications_core::{register_notification_audience, send_notification, SendNotification};
+use uf_notifications_core::{
+    inventory, register_notification_audience, send_notification, Channels, NotificationKind,
+    SendNotification,
+};
 use valence::{Model, Mutation, MutationKind, RecordId, SideEffect};
 
 use crate::generated::{
     Permission, PermissionGroup, PermissionGroupPrincipal, PermissionRequest,
     PermissionRequestStatus, PermissionUserPrincipal,
 };
+
+/// Notification `kind` sent to the owners of a permission or group when
+/// someone asks for access to it.
+pub const KIND_REQUEST_TO_APPROVE: &str = "gauge.request_to_approve";
+
+/// Notification `kind` sent to the requester when their request is approved
+/// or denied.
+pub const KIND_REQUEST_ANSWERED: &str = "gauge.request_answered";
+
+inventory::submit! {
+    NotificationKind {
+        id: KIND_REQUEST_TO_APPROVE,
+        app: "gauge",
+        label: "Access request to approve",
+        description: "Someone asks for access to a permission or group you own.",
+        defaults: Channels { in_app: true, email: true, text: false },
+        asks_action: true,
+        urgent: true,
+    }
+}
+
+inventory::submit! {
+    NotificationKind {
+        id: KIND_REQUEST_ANSWERED,
+        app: "gauge",
+        label: "Access request answered",
+        description: "Your access request is approved or denied.",
+        defaults: Channels { in_app: true, email: false, text: false },
+        asks_action: false,
+        urgent: false,
+    }
+}
 
 fn record_id_part(r: &RecordId) -> String {
     valence::extract_id_from_record(r).unwrap_or_default()
@@ -167,7 +202,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                     if let Err(e) = send_notification(
                         SendNotification {
                             user_id: owner_user_id,
-                            kind: "permission_request".to_string(),
+                            kind: KIND_REQUEST_TO_APPROVE.to_string(),
                             title: "Permission request submitted".to_string(),
                             message: format!(
                                 "A new request is waiting for review for {target_table}:{target_id}."
@@ -207,7 +242,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                 if let Err(e) = send_notification(
                     SendNotification {
                         user_id: after.requestor().clone(),
-                        kind: "permission_request".to_string(),
+                        kind: KIND_REQUEST_ANSWERED.to_string(),
                         title: "Permission request updated".to_string(),
                         message: format!("Your permission request was {decision}."),
                         url: Some(format!("/permission/requests/{request_id}")),
@@ -226,5 +261,21 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
             MutationKind::Delete => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod notification_kind_tests {
+    use super::*;
+
+    #[test]
+    fn every_sent_kind_is_registered_happy() {
+        for id in [KIND_REQUEST_TO_APPROVE, KIND_REQUEST_ANSWERED] {
+            let kind = uf_notifications_core::kinds::kind(id)
+                .unwrap_or_else(|| panic!("{id} is not registered"));
+            assert_eq!(kind.app, "gauge", "{id}");
+            assert_eq!(kind.defaults.email, kind.asks_action, "{id}");
+            assert!(!kind.defaults.text, "{id}");
+        }
     }
 }
