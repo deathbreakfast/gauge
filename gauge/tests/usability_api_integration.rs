@@ -562,3 +562,66 @@ async fn requester_cannot_approve_their_own_request_sad() {
         );
     }
 }
+
+#[tokio::test]
+async fn colliding_keys_never_share_another_users_owner_group_sad() {
+    let w = world().await;
+    let mut owner_groups = Vec::new();
+    for (user, key) in [
+        ("alice", "deploy_prod"),
+        ("bob", "Deploy-Prod"),
+        ("bob", "DEPLOY_PROD"),
+    ] {
+        let v = w.as_user(user);
+        let domain = create_domain(
+            PermissionDomainCreateInput {
+                name: format!("Deploys {key}"),
+                description: String::new(),
+            },
+            &v,
+        )
+        .await
+        .unwrap();
+        let permission = create_permission(
+            PermissionCreateInput {
+                display_name: String::new(),
+                name: key.into(),
+                description: String::new(),
+                owners_group_id: String::new(),
+                domain_id: common::record_pk_id(domain.id()),
+            },
+            &v,
+        )
+        .await
+        .unwrap();
+        let id = common::record_pk_id(permission.id());
+        let detail = get_permission_detail(&id, &v).await.unwrap().unwrap();
+        // The creator owns what they just made.
+        list_effective_holders(&id, &v)
+            .await
+            .unwrap_or_else(|e| panic!("{user} should own {key}: {e:#}"));
+        owner_groups.push(detail.owners_group_id);
+    }
+    assert_ne!(
+        owner_groups[0], owner_groups[1],
+        "bob must not get alice's group"
+    );
+    assert_ne!(
+        owner_groups[0], owner_groups[2],
+        "bob must not get alice's group"
+    );
+    // alice can't edit bob's permission through a shared group.
+    let bobs = gauge::service::list_permissions(&w.as_user("bob"), Some("Deploy-Prod".into()))
+        .await
+        .unwrap();
+    let bobs_id = bobs
+        .iter()
+        .find(|p| p.name == "Deploy-Prod")
+        .unwrap()
+        .id
+        .clone();
+    assert_err(
+        list_effective_holders(&bobs_id, &w.as_user("alice")).await,
+        "NotAuthorized",
+    );
+}

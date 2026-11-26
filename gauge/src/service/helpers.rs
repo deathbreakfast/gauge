@@ -555,8 +555,9 @@ pub async fn require_actor_controls_owner_group(group_id: &str, v: &Valence) -> 
 }
 
 /// The owner group a permission create makes when the caller names none: `Owners of
-/// {display_name}`, owned by and containing the caller. One per permission key, so each
-/// permission's owners can change without touching another's.
+/// {display_name}`, owned by and containing the caller. One per permission, so each
+/// permission's owners can change without touching another's. An existing group with the same
+/// id is reused only when the caller already owns it; anyone else's group is never handed over.
 pub async fn resolve_or_create_default_owner_group(
     user_id: &str,
     display_name: &str,
@@ -573,9 +574,15 @@ pub async fn resolve_or_create_default_owner_group(
             }
         })
         .collect();
-    let group_id = format!("owners_of_{key_fragment}");
+    // Keys that differ only in case or punctuation share a fragment, and a group outlives the
+    // permission it was made for. Reuse the group only when the caller already owns it (a retry
+    // of their own create); otherwise give this permission a fresh group of its own.
+    let mut group_id = format!("owners_of_{key_fragment}");
     if let Some(existing) = get_group_raw(&group_id, system).await? {
-        return Ok(existing);
+        if group_has_owner_user(&existing, &user_id_candidates(user_id), system).await? {
+            return Ok(existing);
+        }
+        group_id = format!("{group_id}_{}", uuid::Uuid::new_v4().simple());
     }
 
     let now = Utc::now();
