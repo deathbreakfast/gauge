@@ -6,9 +6,6 @@ mod common;
 
 use common::{record_pk_id, seed_user, test_valence};
 use gauge::service;
-use gauge::side_effects::permission_request_notifier::{
-    KIND_REQUEST_ANSWERED, KIND_REQUEST_TO_APPROVE,
-};
 use gauge::types::{
     PermissionCreateInput, PermissionDomainCreateInput, PermissionGroupCreateInput,
     PermissionRequestCreateInput, PermissionRequestDecision, PermissionRequestDecisionInput,
@@ -16,7 +13,7 @@ use gauge::types::{
 };
 use serde::Deserialize;
 use uf_notifications_core::{send_notification, SendNotification};
-use valence::{Actor, RecordId, RecordPredicate, SortDirection, Valence};
+use valence::{Actor, RecordId, RecordPredicate, SortDirection, StringPredicate, Valence};
 
 #[derive(Debug, Deserialize)]
 struct NotificationRow {
@@ -37,13 +34,11 @@ async fn permission_request_notifications_for_user(
     });
     let rows = uf_notifications_core::generated::Notification::query(&lookup, valence::use_!(r"**Test:** Fixture **Notification** list for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .where_user(RecordPredicate::Equals(RecordId::new("user", user_id)))
+        .where_kind(StringPredicate::Equals("permission_request".to_string()))
         .order_by_created_at(SortDirection::Desc)
         .await?;
     Ok(rows
         .into_iter()
-        .filter(|row| {
-            [KIND_REQUEST_TO_APPROVE, KIND_REQUEST_ANSWERED].contains(&row.kind().as_str())
-        })
         .map(|row| NotificationRow {
             user: row.user().clone(),
             kind: row.kind().clone(),
@@ -123,7 +118,7 @@ async fn create_permission_request_notifies_permission_owners() -> anyhow::Resul
 
     let created = &owner_notifications[0];
     assert_eq!(created.user.table(), "user");
-    assert_eq!(created.kind, KIND_REQUEST_TO_APPROVE);
+    assert_eq!(created.kind, "permission_request");
     assert_eq!(created.title, "Permission request submitted");
     assert!(
         created
@@ -365,7 +360,7 @@ async fn scoped_create_denies_request_notification_to_non_owner() -> anyhow::Res
 
     let send_to = |user: &'static str| SendNotification {
         user_id: RecordId::new("user", user),
-        kind: KIND_REQUEST_TO_APPROVE.to_string(),
+        kind: "permission_request".to_string(),
         title: "Permission request submitted".to_string(),
         message: "A new request is waiting for review.".to_string(),
         subject: Some(format!("permission_request:{}", request.id)),
