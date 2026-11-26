@@ -88,6 +88,7 @@ async fn create_permission_request_notifies_permission_owners() -> anyhow::Resul
 
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "Deploy".to_string(),
             description: "Allow deploys".to_string(),
             owners_group_id,
@@ -120,12 +121,11 @@ async fn create_permission_request_notifies_permission_owners() -> anyhow::Resul
     assert_eq!(created.user.table(), "user");
     assert_eq!(created.kind, "permission_request");
     assert_eq!(created.title, "Permission request submitted");
-    assert!(
-        created
-            .message
-            .contains(&format!("permission:{permission_id}.")),
-        "notification should include target record id"
+    assert_eq!(
+        created.message, "A new request for Deploy is waiting for your review.",
+        "notification names the target by its display name, not table:id"
     );
+    assert!(!created.message.contains(&permission_id));
     let expected_url = format!("/permission/requests/{}", request.id);
     assert_eq!(created.url.as_deref(), Some(expected_url.as_str()));
     let expected_subject = format!("permission_request:{}", request.id);
@@ -173,6 +173,7 @@ async fn create_permission_request_does_not_notify_non_owners_sad() -> anyhow::R
 
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "NotifyPerm".to_string(),
             description: "notify".to_string(),
             owners_group_id,
@@ -282,14 +283,7 @@ async fn decide_permission_request_notifies_requestor_for_terminal_statuses() ->
         &requestor_ctx,
     )
     .await?;
-    service::decide_permission_request(
-        PermissionRequestDecisionInput {
-            request_id: request_b.id.clone(),
-            decision: PermissionRequestDecision::Deny,
-        },
-        &owner_ctx,
-    )
-    .await?;
+    service::deny_request(&request_b.id, "Not this quarter", &owner_ctx).await?;
 
     let requestor_notifications =
         permission_request_notifications_for_user(&system, "requestor").await?;
@@ -306,15 +300,14 @@ async fn decide_permission_request_notifies_requestor_for_terminal_statuses() ->
     assert!(
         decision_notifications
             .iter()
-            .any(|n| n.message == "Your permission request was approved."
+            .any(|n| n.message == "Your request for Team Alpha was approved."
                 && n.url.as_deref() == Some(&format!("/permission/requests/{}", request_a.id))),
         "expected approved decision notification"
     );
     assert!(
-        decision_notifications
-            .iter()
-            .any(|n| n.message == "Your permission request was denied."
-                && n.url.as_deref() == Some(&format!("/permission/requests/{}", request_b.id))),
+        decision_notifications.iter().any(|n| n.message
+            == "Your request for Team Beta was denied: Not this quarter"
+            && n.url.as_deref() == Some(&format!("/permission/requests/{}", request_b.id))),
         "expected denied decision notification"
     );
 

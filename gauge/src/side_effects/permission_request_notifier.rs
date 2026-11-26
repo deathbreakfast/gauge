@@ -8,6 +8,10 @@ use crate::generated::{
     Permission, PermissionGroup, PermissionGroupPrincipal, PermissionRequest,
     PermissionRequestStatus, PermissionUserPrincipal,
 };
+use lepton_identity::service_users::ServiceUserId;
+
+/// Notification kind for "you were added to / removed from" messages.
+pub const ACCESS_CHANGE_KIND: &str = "gauge_access_change";
 
 fn record_id_part(r: &RecordId) -> String {
     valence::extract_id_from_record(r).unwrap_or_default()
@@ -92,6 +96,7 @@ fn status_changed_to_terminal(
         return false;
     };
     let status = after.status();
+    // A withdrawal is the requester's own act; nobody needs telling.
     let is_terminal = matches!(
         status,
         PermissionRequestStatus::Approved | PermissionRequestStatus::Denied
@@ -114,6 +119,7 @@ fn status_changed_to_terminal(
 pub fn register_permission_request_audience() {
     static REGISTER: Once = Once::new();
     REGISTER.call_once(|| {
+        register_access_change_audience();
         register_notification_audience("permission_request", None, |subject, recipient, v| {
             Box::pin(async move {
                 let Some(request_id) = subject.strip_prefix("permission_request:") else {
@@ -155,8 +161,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
 
                 let request_id = record_id_part(request_id_thing);
                 let target = after.target();
-                let target_table = target.table().to_string();
-                let target_id = record_id_part(target);
+                let target_label = target_label(target, mutation.valence()).await;
                 let subject = format!("permission_request:{request_id}");
                 let owners = target_owner_user_ids(target, mutation.valence())
                     .await
@@ -170,7 +175,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                             kind: "permission_request".to_string(),
                             title: "Permission request submitted".to_string(),
                             message: format!(
-                                "A new request is waiting for review for {target_table}:{target_id}."
+                                "A new request for {target_label} is waiting for your review."
                             ),
                             url: Some(format!("/permission/requests/{request_id}")),
                             data_json: None,
@@ -198,10 +203,21 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                 };
 
                 let request_id = record_id_part(request_id_thing);
-                let decision = match after.status() {
-                    PermissionRequestStatus::Approved => "approved",
-                    PermissionRequestStatus::Denied => "denied",
-                    PermissionRequestStatus::Pending => return Ok(()),
+                let target_label = target_label(after.target(), mutation.valence()).await;
+                let message = match after.status() {
+                    PermissionRequestStatus::Approved => {
+                        format!("Your request for {target_label} was approved.")
+                    }
+                    PermissionRequestStatus::Denied => match after.deny_reason() {
+                        Some(reason) if !reason.trim().is_empty() => format!(
+                            "Your request for {target_label} was denied: {}",
+                            reason.trim()
+                        ),
+                        _ => format!("Your request for {target_label} was denied."),
+                    },
+                    PermissionRequestStatus::Pending | PermissionRequestStatus::Withdrawn => {
+                        return Ok(())
+                    }
                 };
 
                 if let Err(e) = send_notification(
@@ -209,7 +225,7 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
                         user_id: after.requestor().clone(),
                         kind: "permission_request".to_string(),
                         title: "Permission request updated".to_string(),
-                        message: format!("Your permission request was {decision}."),
+                        message,
                         url: Some(format!("/permission/requests/{request_id}")),
                         data_json: None,
                         subject: Some(format!("permission_request:{request_id}")),
@@ -227,4 +243,246 @@ impl SideEffect<PermissionRequest> for PermissionRequestNotifier {
         }
         Ok(())
     }
+}
+
+/// The name people read for a request target: the permission's display name or the group's
+/// name. Falls back to "a permission" / "a group" when the row can't be read, never an id.
+async fn target_label(target: &RecordId, v: &valence::Valence) -> String {
+    let id = record_id_part(target);
+    match target.table() {
+        "permission" => match crate::service::helpers::get_permission_raw(&id, v).await {
+            Ok(Some(permission)) => crate::service::permission_display_name(&permission),
+            _ => "a permission".to_string(),
+        },
+        "permission_group" => match crate::service::helpers::get_group_raw(&id, v).await {
+            Ok(Some(group)) => group.name().clone(),
+            _ => "a group".to_string(),
+        },
+        _ => "this access".to_string(),
+    }
+}
+
+/// Who an access change is about.
+#[derive(Clone, Debug)]
+enum Affected {
+    /// A person, by bare user id.
+    User(String),
+    /// A service user; its owner is told.
+    ServiceUser(ServiceUserId),
+}
+
+/// A change to someone's access worth telling them about: added to or removed from a group, or
+/// a permission's allow list. Build one with the constructors and pass it to
+/// [`notify_access_change`].
+#[derive(Clone, Debug)]
+pub struct AccessChange {
+    subject: RecordId,
+    affected: Affected,
+    /// Sentence for the person affected.
+    for_person: String,
+    /// Sentence for a service user's owner; `<handle>` is replaced with the handle.
+    for_owner: String,
+    url: String,
+}
+
+impl AccessChange {
+    fn permission(
+        permission: &Permission,
+        affected: Affected,
+        for_person: impl FnOnce(&str) -> String,
+        for_owner: impl FnOnce(&str) -> String,
+    ) -> Self {
+        let id = permission.id().map(record_id_part).unwrap_or_default();
+        let label = crate::service::permission_display_name(permission);
+        Self {
+            subject: RecordId::new("permission", &id),
+            affected,
+            for_person: for_person(&label),
+            for_owner: for_owner(&label),
+            url: format!("/permission/permissions/{id}"),
+        }
+    }
+
+    fn group(
+        group: &PermissionGroup,
+        affected: Affected,
+        for_person: impl FnOnce(&str) -> String,
+        for_owner: impl FnOnce(&str) -> String,
+    ) -> Self {
+        let id = group.id().map(record_id_part).unwrap_or_default();
+        let label = group.name().clone();
+        Self {
+            subject: RecordId::new("permission_group", &id),
+            affected,
+            for_person: for_person(&label),
+            for_owner: for_owner(&label),
+            url: format!("/permission/groups/{id}"),
+        }
+    }
+
+    /// `user_id` was put on `permission`'s allow list.
+    #[must_use]
+    pub fn user_granted(permission: &Permission, user_id: &str) -> Self {
+        Self::permission(
+            permission,
+            Affected::User(user_id.to_string()),
+            |p| format!("You were given {p}."),
+            |p| format!("<handle> was given {p}."),
+        )
+    }
+
+    /// `user_id` was taken off `permission`'s allow list.
+    #[must_use]
+    pub fn user_revoked(permission: &Permission, user_id: &str) -> Self {
+        Self::permission(
+            permission,
+            Affected::User(user_id.to_string()),
+            |p| format!("You were removed from the allow list of {p}."),
+            |p| format!("<handle> was removed from the allow list of {p}."),
+        )
+    }
+
+    /// `service_user` was put on `permission`'s allow list; its owner is told.
+    #[must_use]
+    pub fn service_user_granted(permission: &Permission, service_user: &ServiceUserId) -> Self {
+        let mut change = Self::user_granted(permission, "");
+        change.affected = Affected::ServiceUser(service_user.clone());
+        change
+    }
+
+    /// `service_user` was taken off `permission`'s allow list; its owner is told.
+    #[must_use]
+    pub fn service_user_revoked(permission: &Permission, service_user: &ServiceUserId) -> Self {
+        let mut change = Self::user_revoked(permission, "");
+        change.affected = Affected::ServiceUser(service_user.clone());
+        change
+    }
+
+    /// `user_id` was added to `group` as a member.
+    #[must_use]
+    pub fn user_added(group: &PermissionGroup, user_id: &str) -> Self {
+        Self::group(
+            group,
+            Affected::User(user_id.to_string()),
+            |g| format!("You were added to {g}."),
+            |g| format!("<handle> was added to {g}."),
+        )
+    }
+
+    /// `user_id` was removed from `group`'s members.
+    #[must_use]
+    pub fn user_removed(group: &PermissionGroup, user_id: &str) -> Self {
+        Self::group(
+            group,
+            Affected::User(user_id.to_string()),
+            |g| format!("You were removed from {g}."),
+            |g| format!("<handle> was removed from {g}."),
+        )
+    }
+}
+
+/// Tell the person an access change affects, or a service user's owner, through the same
+/// notification delivery as access requests.
+///
+/// Sent under the caller's own Valence (the editor who made the change, never System); the
+/// audience check registered by [`register_permission_request_audience`] admits it because the
+/// sender can edit the permission or group. A change the caller made to their own access sends
+/// nothing. Delivery failures are logged and never fail the change itself.
+pub async fn notify_access_change(v: &valence::Valence, change: AccessChange) {
+    let (recipient, message) = match &change.affected {
+        Affected::User(user_id) => (
+            crate::service::helpers::canonical_user_id(user_id),
+            change.for_person.clone(),
+        ),
+        Affected::ServiceUser(service_user) => match service_user_owner(service_user, v).await {
+            Some((owner, handle)) => (owner, change.for_owner.replace("<handle>", &handle)),
+            None => return,
+        },
+    };
+    if recipient.is_empty()
+        || v.actor()
+            .user_id()
+            .is_some_and(|me| crate::service::helpers::canonical_user_id(me) == recipient)
+    {
+        return;
+    }
+    if let Err(e) = send_notification(
+        SendNotification {
+            user_id: RecordId::new("user", &recipient),
+            kind: ACCESS_CHANGE_KIND.to_string(),
+            title: "Your access changed".to_string(),
+            message,
+            url: Some(change.url.clone()),
+            data_json: None,
+            subject: Some(change.subject.to_string()),
+        },
+        v,
+    )
+    .await
+    {
+        log::warn!(
+            "gauge access change notification failed (subject={}): {e}",
+            change.subject
+        );
+    }
+}
+
+/// The owning user's bare id and the handle of `service_user`, from control-plane raw reads
+/// (an editor removing a service user need not be able to see it). `None` without an owner.
+async fn service_user_owner(
+    service_user: &ServiceUserId,
+    v: &valence::Valence,
+) -> Option<(String, String)> {
+    let row = crate::actor_can_raw::raw_get_json("service_user_account", service_user.as_str(), v)
+        .await
+        .ok()??;
+    let account: lepton::generated::ServiceUserAccount = serde_json::from_value(row).ok()?;
+    let owner = account
+        .user()
+        .and_then(|owner| valence::extract_id_from_record(owner).ok())?;
+    Some((owner, account.handle().clone()))
+}
+
+/// Admit an access-change notice when the sender can edit the permission or group it names.
+fn register_access_change_audience() {
+    register_notification_audience(
+        "permission",
+        Some(ACCESS_CHANGE_KIND),
+        |subject, _recipient, v| {
+            Box::pin(async move {
+                let Some(id) = subject.strip_prefix("permission:") else {
+                    return Ok(false);
+                };
+                let permission = crate::service::helpers::get_permission_raw(id, v)
+                    .await
+                    .map_err(|e| valence::Error::Internal(e.to_string()))?;
+                match permission {
+                    Some(permission) => crate::service::can_edit_permission(&permission, v)
+                        .await
+                        .map_err(|e| valence::Error::Internal(e.to_string())),
+                    None => Ok(false),
+                }
+            })
+        },
+    );
+    register_notification_audience(
+        "permission_group",
+        Some(ACCESS_CHANGE_KIND),
+        |subject, _recipient, v| {
+            Box::pin(async move {
+                let Some(id) = subject.strip_prefix("permission_group:") else {
+                    return Ok(false);
+                };
+                let group = crate::service::helpers::get_group_raw(id, v)
+                    .await
+                    .map_err(|e| valence::Error::Internal(e.to_string()))?;
+                match group {
+                    Some(group) => crate::service::can_edit_group(&group, v)
+                        .await
+                        .map_err(|e| valence::Error::Internal(e.to_string())),
+                    None => Ok(false),
+                }
+            })
+        },
+    );
 }

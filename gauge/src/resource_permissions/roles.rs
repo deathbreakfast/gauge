@@ -69,7 +69,7 @@ impl Role {
 }
 
 /// Fixed order for listing actions, so [`Role::Custom`] and [`grants_for`] are stable.
-const ACTION_ORDER: [ResourceAction; 7] = [
+const ACTION_ORDER: [ResourceAction; 8] = [
     ResourceAction::View,
     ResourceAction::Run,
     ResourceAction::Unmask,
@@ -77,6 +77,7 @@ const ACTION_ORDER: [ResourceAction; 7] = [
     ResourceAction::Edit,
     ResourceAction::Delete,
     ResourceAction::Maintain,
+    ResourceAction::Audit,
 ];
 
 /// The actions `role` grants on a resource of `kind`, in a fixed order.

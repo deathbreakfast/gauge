@@ -53,6 +53,12 @@ valence_schema! {
                 r#type: FieldType::Record("permission_domain"),
                 required: true,
             },
+            // The name people read. `name` (the trait field) stays the key code checks and
+            // never changes after create; rows written before this field read as their key.
+            display_name: {
+                r#type: FieldType::String,
+                required: false,
+            },
         ],
 
         connections: [

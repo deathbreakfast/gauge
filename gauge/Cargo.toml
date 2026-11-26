@@ -18,7 +18,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
+chrono = { workspace = true }
 uuid = { workspace = true }
 log = { workspace = true }
 uf-product-macros = { workspace = true }
@@ -55,7 +55,6 @@ db-hybrid = ["valence/hybrid"]
 ssr = [
     "leptos/ssr",
     "dep:async-trait",
-    "dep:chrono",
     "dep:spectra-core",
     "dep:spectra",
     "dep:valence",
@@ -84,7 +83,6 @@ spectra-topics = [
     "dep:photon-macros",
     "dep:futures",
     "dep:tokio",
-    "dep:chrono",
 ]
 
 # Keep dev-deps featureless: a dev-dep enabling `lepton/ssr` turns on `leptos/ssr`
@@ -105,6 +103,10 @@ name = "product_surface"
 
 [[test]]
 name = "history_integration"
+required-features = ["ssr"]
+
+[[test]]
+name = "usability_api_integration"
 required-features = ["ssr"]
 
 [[test]]

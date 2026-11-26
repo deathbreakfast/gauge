@@ -70,9 +70,14 @@ pub struct PrincipalRefDto {
 /// Input for creating a new permission.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PermissionCreateInput {
-    /// Permission name (unique within its domain).
+    /// The name people read, for example "Approve payroll runs". Empty means "use the key".
+    #[serde(default)]
+    pub display_name: String,
+    /// The key code checks (`actor_can`), unique across Gauge. It never changes after create.
+    /// Empty means the display name in `PascalCase` ("Approve payroll runs" becomes
+    /// `ApprovePayrollRuns`).
     pub name: String,
-    /// Human-readable description of what the permission grants.
+    /// What the permission grants, as Markdown text.
     pub description: String,
     /// Id of the group that owns/administers this permission.
     pub owners_group_id: String,
@@ -85,7 +90,7 @@ pub struct PermissionCreateInput {
 pub struct PermissionGroupCreateInput {
     /// Group name.
     pub name: String,
-    /// Human-readable description of the group's purpose.
+    /// The group's purpose, as Markdown text.
     pub description: String,
 }
 
@@ -94,7 +99,7 @@ pub struct PermissionGroupCreateInput {
 pub struct PermissionDomainCreateInput {
     /// Domain name.
     pub name: String,
-    /// Human-readable description of the domain.
+    /// What the domain covers, as Markdown text.
     pub description: String,
 }
 
@@ -121,9 +126,12 @@ pub struct PermissionDomainDetailDto {
 pub struct PermissionDetailDto {
     /// Bare record id.
     pub id: String,
-    /// Permission name.
+    /// Permission key: the name code checks. Never changes after create.
     pub name: String,
-    /// Human-readable description.
+    /// The name people read. The key for rows written before display names existed.
+    #[serde(default)]
+    pub display_name: String,
+    /// Description, as Markdown text.
     pub description: String,
     /// User id of the permission's creator.
     ///
@@ -236,6 +244,8 @@ pub enum PermissionRequestStatusDto {
     Approved,
     /// Reviewer denied the request.
     Denied,
+    /// The requester withdrew the request while it was pending.
+    Withdrawn,
 }
 
 /// Input for submitting a new access request.
@@ -297,9 +307,207 @@ pub struct PermissionRequestRowDto {
     pub updated_at: String,
     /// Whether the current actor may review (approve/deny) this request.
     pub can_review: bool,
+    /// Display name of the requester (their profile name or email), so pages never show ids.
+    #[serde(default)]
+    pub requester_label: String,
+    /// User id of who decided the request: the reviewer, or the requester for a withdrawal.
+    /// `None` while pending.
+    #[serde(default)]
+    pub decided_by: Option<String>,
+    /// Display name of [`Self::decided_by`].
+    #[serde(default)]
+    pub decided_by_label: Option<String>,
+    /// When the request was approved, denied or withdrawn. `None` while pending, and for
+    /// requests decided before this was recorded.
+    #[serde(default)]
+    pub decided_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The reviewer's reason, on a denied request.
+    #[serde(default)]
+    pub deny_reason: Option<String>,
     /// The service user the request is for, when filed on behalf of one, with its handle in
     /// [`PrincipalRefDto::label`]. `owner_label` holds the owning user's display label. `None` for a plain user
     /// request.
     #[serde(default)]
     pub on_behalf_of: Option<PrincipalRefDto>,
+}
+
+/// A permission, named for people: its id, key and display name.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct PermissionRef {
+    /// Bare record id.
+    pub id: String,
+    /// The key code checks (`permission.name`).
+    pub key: String,
+    /// The name people read.
+    pub display_name: String,
+}
+
+/// A group, by id and name.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct GroupRef {
+    /// Bare record id.
+    pub id: String,
+    /// Group name.
+    pub name: String,
+}
+
+/// A principal as pages show it. Same shape as [`PrincipalRefDto`].
+pub type PrincipalRef = PrincipalRefDto;
+
+/// Names a user or service user to look up, without a label.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrincipalKey {
+    /// [`PrincipalKind::User`] or [`PrincipalKind::ServiceUser`].
+    pub kind: PrincipalKind,
+    /// Bare user id, or the service user's id.
+    pub id: String,
+}
+
+/// How a principal comes to hold a permission.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AccessPath {
+    /// The permission's allow list names the principal.
+    Direct,
+    /// Through groups, outermost first: the group the allow list names, then each nested group
+    /// down to the one the principal is a member (or owner) of.
+    ThroughGroup(Vec<GroupRef>),
+    /// The principal is a Super User, who passes every check.
+    SuperUser,
+}
+
+/// One principal that passes a permission's check, and why.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HolderRow {
+    /// Who holds it.
+    pub principal: PrincipalRef,
+    /// Display name: a person's profile name or email, a service user's handle.
+    pub label: String,
+    /// [`PrincipalKind::User`] or [`PrincipalKind::ServiceUser`].
+    pub kind: PrincipalKind,
+    /// The owning user's label, for a service user.
+    pub owner_label: Option<String>,
+    /// Every way the principal holds the permission.
+    pub paths: Vec<AccessPath>,
+    /// When the direct grant was made, when the history has it.
+    pub since: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// What kind of Gauge record a [`RecordRef`] names.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum RecordKind {
+    /// A permission.
+    Permission,
+    /// A permission group.
+    Group,
+    /// A permission domain.
+    Domain,
+    /// An access request.
+    Request,
+}
+
+/// A Gauge record, named for people.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct RecordRef {
+    /// What kind of record it is.
+    pub kind: RecordKind,
+    /// Bare record id.
+    pub id: String,
+    /// Its display name (a permission's display name, a group's or domain's name).
+    pub label: String,
+}
+
+/// One page of a longer list.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Page<T> {
+    /// The rows on this page.
+    pub items: Vec<T>,
+    /// Pass this back to get the next page. `None` on the last page.
+    pub next_cursor: Option<String>,
+}
+
+/// A user or service user Gauge knows, for the People list.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PersonRow {
+    /// Who it is.
+    pub principal: PrincipalRef,
+    /// Groups they are a member or owner of, directly.
+    pub groups: Vec<GroupRef>,
+    /// Permissions granted to them directly.
+    pub direct_permissions: Vec<PermissionRef>,
+}
+
+/// A group a principal belongs to, with who added them and when.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GroupMembership {
+    /// The group.
+    pub group: GroupRef,
+    /// Who added them, when the history has it.
+    pub added_by_label: Option<String>,
+    /// When they were added, when the history has it.
+    pub added_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Everything one person or service user can do in Gauge, and why.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PrincipalAccess {
+    /// Each permission they hold, with every path to it.
+    pub permissions: Vec<(PermissionRef, Vec<AccessPath>)>,
+    /// Groups they are directly a member (or owner) of.
+    pub groups: Vec<GroupMembership>,
+    /// Permissions and groups they own, directly or through an owner group.
+    pub owns: Vec<RecordRef>,
+    /// Their pending access requests (for a service user, the ones filed for it).
+    pub open_requests: Vec<PermissionRequestRowDto>,
+}
+
+/// What a change log row is about.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ActivityKind {
+    /// A permission was created, edited or deleted.
+    Permission,
+    /// A permission's allow list changed.
+    Grant,
+    /// A group was created, edited or deleted, or its owners changed.
+    Group,
+    /// A group's members changed.
+    Membership,
+    /// A domain changed.
+    Domain,
+    /// An access request was filed, decided or withdrawn.
+    Request,
+}
+
+/// Which change log rows to return. Empty fields match everything.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActivityFilter {
+    /// Only these kinds. Empty means every kind.
+    #[serde(default)]
+    pub kinds: Vec<ActivityKind>,
+    /// Only changes at or after this time.
+    #[serde(default)]
+    pub since: Option<chrono::DateTime<chrono::Utc>>,
+    /// Only changes by this user id.
+    #[serde(default)]
+    pub actor: Option<String>,
+    /// Only changes to this record (kind and id; the label is ignored).
+    #[serde(default)]
+    pub record: Option<RecordRef>,
+    /// Only rows whose summary, actor or record name contains this text (any case).
+    #[serde(default)]
+    pub query: Option<String>,
+}
+
+/// One change, in words.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActivityRow {
+    /// When it happened.
+    pub at: chrono::DateTime<chrono::Utc>,
+    /// Who did it: a display name, or "Gauge" for system changes.
+    pub actor_label: String,
+    /// What happened, as a sentence by name ("Removed Ravi Menon from the group").
+    pub summary: String,
+    /// The record it happened to.
+    pub record: RecordRef,
+    /// What kind of change it is.
+    pub kind: ActivityKind,
 }

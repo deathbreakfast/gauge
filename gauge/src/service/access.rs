@@ -11,6 +11,20 @@ use super::helpers::{
     permissions_named, principal_kind_from_record, user_id_candidates,
 };
 
+/// Permission that makes a signed-in user a Gauge administrator. Super users pass it too.
+pub const GAUGE_ADMIN: &str = "GaugeAdmin";
+
+/// `true` when the actor is a signed-in user holding [`GAUGE_ADMIN`], or a super user.
+///
+/// Service users, anonymous callers and System never count: the admin-only reads are for
+/// people, and System jobs call the underlying services directly.
+pub async fn actor_is_gauge_admin(v: &Valence) -> anyhow::Result<bool> {
+    if current_user_id(v).is_none() {
+        return Ok(false);
+    }
+    actor_can(v, GAUGE_ADMIN).await
+}
+
 /// `true` when the current actor is a super user or an owner (direct or nested) of `group`.
 pub async fn can_edit_group(group: &PermissionGroup, v: &Valence) -> anyhow::Result<bool> {
     if actor_is_super_user(v).await? {

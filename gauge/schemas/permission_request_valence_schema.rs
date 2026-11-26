@@ -1,6 +1,8 @@
 #[allow(unused_imports)]
 use crate::side_effects::permission_request_notifier::PermissionRequestNotifier;
-use crate::privacy_policies::{REQUEST_TARGET_MAINTAINER, SUPER_USER_GROUP_MEMBER};
+use crate::privacy_policies::{
+    REQUEST_REQUESTER_WITHDRAW, REQUEST_TARGET_MAINTAINER, SUPER_USER_GROUP_MEMBER,
+};
 use valence::prelude::*;
 use valence::privacy_policies::common::{AUTHENTICATED, BLOCK_ALL};
 
@@ -8,7 +10,7 @@ valence_schema! {
     PermissionRequest {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_request",
-        version: "0.2.0",
+        version: "0.2.1",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Request from a user to gain access to a permission or permission group",
 
@@ -22,10 +24,11 @@ valence_schema! {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
                 allow: [AUTHENTICATED],
             },
-            // Decide: target maintainers or Super User; session actor — no System elevate.
+            // Decide: target maintainers or Super User; withdraw: the requester while pending.
+            // Session actor — no System elevate.
             update: {
                 always_allow: [SUPER_USER_GROUP_MEMBER],
-                allow: [REQUEST_TARGET_MAINTAINER],
+                allow: [REQUEST_TARGET_MAINTAINER, REQUEST_REQUESTER_WITHDRAW],
             },
             delete: {
                 always_block: [BLOCK_ALL],
@@ -56,7 +59,7 @@ valence_schema! {
                 validations: [Validator::MinLength(1), Validator::MaxLength(2000)],
             },
             status: {
-                r#type: FieldType::Enum(&["PENDING", "APPROVED", "DENIED"]),
+                r#type: FieldType::Enum(&["PENDING", "APPROVED", "DENIED", "WITHDRAWN"]),
                 required: true,
             },
             created_at: {
@@ -71,6 +74,17 @@ valence_schema! {
             // service user's Gauge principal (`svc:<id>`). Absent for a plain user request.
             on_behalf_of: {
                 r#type: FieldType::Record("permission_service_user_principal"),
+                required: false,
+            },
+            // Why the reviewer denied the request; shown to the requester. Set only on DENIED.
+            deny_reason: {
+                r#type: FieldType::String,
+                required: false,
+                validations: [Validator::MaxLength(2000)],
+            },
+            // When the request was approved, denied or withdrawn. `approver` holds who decided.
+            decided_at: {
+                r#type: FieldType::DateTime,
                 required: false,
             },
         ],

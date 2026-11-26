@@ -10,23 +10,55 @@ use super::access::{can_edit_group, can_edit_permission, has_permission, permiss
 use super::helpers::{
     current_user_id, ensure_group_principal, ensure_user_principal, get_domain_raw, get_group_raw,
     get_permission_raw, get_user_by_actor_id, get_user_principal_raw, group_has_user,
-    permissions_named, persist_history_entry, principal_ref_from_record, record_pk_id,
-    redact_user_principal_label, require_actor_controls_owner_group, require_model_id,
-    require_raw_record, require_user_id, resolve_or_create_default_owner_group, user_id_candidates,
-    user_principal_id,
+    pascal_case_key, permissions_named, persist_history_entry, principal_ref_from_record,
+    record_pk_id, redact_user_principal_label, require_actor_controls_owner_group,
+    require_model_id, require_raw_record, require_user_id, resolve_or_create_default_owner_group,
+    user_id_candidates, user_principal_id,
 };
+use crate::side_effects::permission_request_notifier::{notify_access_change, AccessChange};
 
-/// Create a new permission under the given domain and owners group (or the actor's
-/// default owner group when `owners_group_id` is empty).
+/// Longest display name a permission takes, the same limit as its key.
+const MAX_DISPLAY_NAME_CHARS: usize = 200;
+
+/// Create a new permission under the given domain and owners group.
+///
+/// `input.display_name` is the name people read; `input.name` is the key code checks, which
+/// never changes after create. An empty key becomes the display name in `PascalCase`
+/// ("Approve payroll runs" gives `ApprovePayrollRuns`); an empty display name reads as the
+/// key. The description is Markdown.
+///
+/// With an empty `owners_group_id` the create also makes the permission's own owner group,
+/// `Owners of {display name}`, owned by and containing the caller.
+///
+/// # Errors
+///
+/// [`GaugeServiceError::Validation`](super::GaugeServiceError) when both names are empty, the
+/// display name is too long, or the key is taken. An error when the caller isn't signed in or
+/// can't use the owners group they named. Valence failures otherwise.
 pub async fn create_permission(
     input: PermissionCreateInput,
     v: &Valence,
 ) -> anyhow::Result<Permission> {
     let actor_user_id = require_user_id(v)?;
     let system = v;
-    let name = input.name.trim().to_string();
+    let display_name = input.display_name.trim().to_string();
+    let name = match input.name.trim() {
+        "" => pascal_case_key(&display_name),
+        key => key.to_string(),
+    };
     if name.is_empty() {
         return Err(super::GaugeServiceError::validation("Permission name is required").into());
+    }
+    let display_name = if display_name.is_empty() {
+        name.clone()
+    } else {
+        display_name
+    };
+    if display_name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+        return Err(super::GaugeServiceError::validation(format!(
+            "Permission name is too long (max {MAX_DISPLAY_NAME_CHARS} characters)"
+        ))
+        .into());
     }
     if !permissions_named(&name, system).await?.is_empty() {
         return Err(super::GaugeServiceError::validation(format!(
@@ -36,7 +68,9 @@ pub async fn create_permission(
     }
 
     let owner_group_id = if input.owners_group_id.trim().is_empty() {
-        let group = resolve_or_create_default_owner_group(&actor_user_id, system).await?;
+        let group =
+            resolve_or_create_default_owner_group(&actor_user_id, &display_name, &name, system)
+                .await?;
         record_pk_id(group.id())
     } else {
         let supplied = input.owners_group_id.trim().to_string();
@@ -57,6 +91,7 @@ pub async fn create_permission(
         Some(require_model_id(created_by.id(), "created_by")?),
         RecordId::new("permission_group", &owner_group_id),
         RecordId::new("permission_domain", input.domain_id.trim()),
+        Some(display_name),
         name,
         if input.description.trim().is_empty() {
             None
@@ -69,6 +104,75 @@ pub async fn create_permission(
 
     let created = Permission::create(permission, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     Ok(created)
+}
+
+/// Rename a permission for people: set the display name pages show (owner or super-user only).
+///
+/// The key (`name`) stays as it is, so code that checks the permission keeps working. History
+/// records the change.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError): `NotFound` for an unknown id,
+/// `NotAuthorized` for a caller who can't edit the permission, `Validation` for an empty or
+/// too long name. Valence failures otherwise.
+pub async fn set_permission_display_name(
+    id: &str,
+    display_name: &str,
+    v: &Valence,
+) -> anyhow::Result<Permission> {
+    let actor_user_id = require_user_id(v)?;
+    let display_name = display_name.trim();
+    if display_name.is_empty() {
+        return Err(super::GaugeServiceError::validation("Permission name is required").into());
+    }
+    if display_name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+        return Err(super::GaugeServiceError::validation(format!(
+            "Permission name is too long (max {MAX_DISPLAY_NAME_CHARS} characters)"
+        ))
+        .into());
+    }
+    let existing = get_permission_raw(id, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("Permission", id))?;
+    if !can_edit_permission(&existing, v).await? {
+        return Err(super::GaugeServiceError::not_authorized("edit permission").into());
+    }
+    let old = permission_display_name(&existing);
+    if old == display_name {
+        return Ok(existing);
+    }
+    let saved = existing
+        .get_mutable(v, valence::use_!(r"When a permission's owner **renames it for people** in **Gauge**, we **save its display name** so pages show the new name. The key code checks stays as it was."))
+        .set_display_name(display_name.to_string())?
+        .set_updated_at(Utc::now())?
+        .commit()
+        .await?;
+    persist_history_entry(
+        v,
+        "permission",
+        id.to_string(),
+        "display_name",
+        Some(actor_user_id),
+        vec![HistoryDiffItemDto {
+            field: "display_name".to_string(),
+            old_value: serde_json::Value::String(old),
+            new_value: serde_json::Value::String(display_name.to_string()),
+        }],
+    )
+    .await?;
+    Ok(saved)
+}
+
+/// The name people read for `permission`: its display name, or its key for rows written
+/// before display names existed.
+#[must_use]
+pub fn permission_display_name(permission: &Permission) -> String {
+    permission
+        .display_name()
+        .filter(|name| !name.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| permission.name().clone())
 }
 
 /// Update a permission's name/description/owners group/domain (owner or super-user
@@ -171,6 +275,7 @@ pub async fn grant_permission_to_user(
         }],
     )
     .await?;
+    notify_access_change(v, AccessChange::user_granted(&permission, user_id)).await;
     Ok(())
 }
 
@@ -267,6 +372,11 @@ async fn relate_permission_to_service_user(
         }],
     )
     .await?;
+    notify_access_change(
+        v,
+        AccessChange::service_user_granted(permission, service_user),
+    )
+    .await;
     Ok(())
 }
 
@@ -330,6 +440,11 @@ pub async fn revoke_permission_from_service_user(
         }],
     )
     .await?;
+    notify_access_change(
+        v,
+        AccessChange::service_user_revoked(&permission, service_user),
+    )
+    .await;
     Ok(())
 }
 
@@ -369,6 +484,7 @@ pub async fn revoke_permission_from_user(
         }],
     )
     .await?;
+    notify_access_change(v, AccessChange::user_revoked(&permission, user_id)).await;
     Ok(())
 }
 
@@ -547,6 +663,7 @@ pub async fn get_permission_detail(
     Ok(Some(PermissionDetailDto {
         id: record_pk_id(permission.id()),
         name: permission.name().clone(),
+        display_name: permission_display_name(&permission),
         description: permission.description().cloned().unwrap_or_default(),
         // Creator id is GaugeAdmin-only (list + detail share this DTO).
         created_by_user_id: if reveal_creator {

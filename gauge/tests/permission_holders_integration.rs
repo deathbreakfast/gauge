@@ -57,6 +57,7 @@ async fn deploy_world() -> World {
     .expect("domain");
     let permission = create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: DEPLOY.into(),
             description: "Deploy".into(),
             owners_group_id: owners,

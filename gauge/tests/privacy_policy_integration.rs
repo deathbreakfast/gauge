@@ -51,6 +51,7 @@ async fn seed_permission_owned_by_group(
         Some(valence::RecordId::new("user", "owner_u1")),
         valence::RecordId::new("permission_group", owners_group_id),
         domain.id().expect("domain id exists").clone(),
+        None,
         format!("perm-{permission_id}"),
         Some("permission for privacy tests".to_string()),
         now,
@@ -310,6 +311,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
         Some(valence::RecordId::new("user", owner_user)),
         valence::RecordId::new("permission_group", group_id),
         valence::RecordId::new("permission_domain", "domain_policy"),
+        None,
         "perm-create-auth".to_string(),
         Some("auth create".to_string()),
         Utc::now(),
@@ -322,6 +324,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
         Some(valence::RecordId::new("user", owner_user)),
         valence::RecordId::new("permission_group", group_id),
         valence::RecordId::new("permission_domain", "domain_policy"),
+        None,
         "perm-create-anon".to_string(),
         Some("anon create".to_string()),
         Utc::now(),
@@ -516,12 +519,11 @@ async fn permission_request_update_maintainer_only_tm_sec_05() -> anyhow::Result
         .await
         .expect("TM-SEC-05 target maintainer Valence update");
 
-    assert_privacy_denied(
-        PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Update, &raw, &outsider_v)
-            .await
-            .expect_err("requestor update"),
-        "requestor is not REQUEST_TARGET_MAINTAINER",
-    );
+    // The requester may update their own pending request (withdraw it); the commit below shows
+    // they still can't record a decision.
+    PrivacyEvaluator::check_entity_access(schema, PrivacyOperation::Update, &raw, &outsider_v)
+        .await
+        .expect("requester may withdraw a pending request");
 
     let loaded = gauge::generated::PermissionRequest::get(&request.id, &system, valence::use_!(r"**Test:** Fixture **Permission Request** load for `tests` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."))
         .await?

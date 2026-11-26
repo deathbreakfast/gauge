@@ -59,6 +59,7 @@ async fn create_and_mutate_permission_flows_happy_path() {
 
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "CanDeploy".to_string(),
             description: "Allow deployments".to_string(),
             owners_group_id: group_id.clone(),
@@ -194,6 +195,7 @@ async fn duplicate_permission_and_group_names_are_rejected_sad() {
 
     let first_permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "Unique Permission Name".to_string(),
             description: String::new(),
             owners_group_id: owners_group_id.clone(),
@@ -206,6 +208,7 @@ async fn duplicate_permission_and_group_names_are_rejected_sad() {
 
     let duplicate_permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "Unique Permission Name".to_string(),
             description: String::new(),
             owners_group_id,
@@ -311,6 +314,7 @@ mod owner_only_and_clear {
         .expect("domain");
         let perm = service::create_permission(
             PermissionCreateInput {
+                display_name: String::new(),
                 name: "OwnerOnlyPerm".to_string(),
                 description: String::new(),
                 owners_group_id: record_pk_id(perm_owners.id()),

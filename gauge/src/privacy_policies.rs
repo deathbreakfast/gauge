@@ -111,6 +111,8 @@ pub const PERMISSION_OWNER_RECURSIVE: PermissionOwnerRecursive = PermissionOwner
 pub const DOMAIN_OWNER_RECURSIVE: DomainOwnerRecursive = DomainOwnerRecursive;
 /// Shared [`RequestTargetMaintainer`] instance for permission-request decide updates.
 pub const REQUEST_TARGET_MAINTAINER: RequestTargetMaintainer = RequestTargetMaintainer;
+/// Shared [`RequestRequesterWithdraw`] instance for withdrawing your own pending request.
+pub const REQUEST_REQUESTER_WITHDRAW: RequestRequesterWithdraw = RequestRequesterWithdraw;
 /// Shared [`SuperUserGroupMember`] instance for use in schema `privacy_policies` declarations.
 pub const SUPER_USER_GROUP_MEMBER: SuperUserGroupMember = SuperUserGroupMember;
 /// Shared [`RequestNamedServiceUserPrincipal`] instance for the service-user principal read policy.
@@ -311,6 +313,55 @@ impl PolicyEvaluator for RequestTargetMaintainer {
             return Ok(false);
         };
         actor_maintains_target(target, &user_ids, v).await
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Lets a request's requester update it while it is pending or withdrawn, so
+/// [`crate::service::withdraw_request`] runs as the requester's own session.
+///
+/// It refuses a row that reads approved or denied, so the requester can't record a decision.
+/// Approving never grants access by itself either: the grant is a separate write that needs
+/// the target's maintainers.
+#[derive(Debug, Clone, Copy)]
+pub struct RequestRequesterWithdraw;
+
+#[async_trait]
+impl PolicyEvaluator for RequestRequesterWithdraw {
+    fn name(&self) -> &'static str {
+        "perm::REQUEST_REQUESTER_WITHDRAW"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Allow the requester to withdraw their own pending request")
+    }
+
+    async fn evaluate(
+        &self,
+        op: PrivacyOperation,
+        record: &serde_json::Value,
+        actor: &dyn ActorContext,
+        _v: &Valence,
+    ) -> valence::Result<bool> {
+        if !matches!(op, PrivacyOperation::Update) {
+            return Ok(false);
+        }
+        let actor = actor_from_context(actor)?;
+        let user_ids = actor_candidates(&actor);
+        if user_ids.is_empty() {
+            return Ok(false);
+        }
+        let status = record.get("status").and_then(serde_json::Value::as_str);
+        if !matches!(status, Some("PENDING" | "WITHDRAWN")) {
+            return Ok(false);
+        }
+        let Some((table, id)) = record.get("requestor").and_then(target_table_and_id) else {
+            return Ok(false);
+        };
+        Ok(table == "user" && user_ids.iter().any(|candidate| candidate == &id))
     }
 
     fn as_any(&self) -> &dyn Any {

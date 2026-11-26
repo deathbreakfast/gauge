@@ -49,6 +49,7 @@ const KINDS: &[KindGolden] = &[
             ResourceAction::Edit,
             ResourceAction::Delete,
             ResourceAction::Maintain,
+            ResourceAction::Audit,
         ],
     },
     KindGolden {
@@ -249,6 +250,29 @@ fn action_suffixes_are_golden() {
     assert_eq!(ResourceAction::Reveal.as_str(), "Reveal");
     assert_eq!(ResourceAction::Run.as_str(), "Run");
     assert_eq!(ResourceAction::Unmask.as_str(), "Unmask");
+    assert_eq!(ResourceAction::Audit.as_str(), "Audit");
+}
+
+#[test]
+fn neutrino_secret_audit_name_is_golden() {
+    assert_eq!(
+        permission_name(
+            ResourceKind::NeutrinoSecret,
+            RESOURCE_ID,
+            ResourceAction::Audit
+        ),
+        "neutrino_secret.res_42_b514137b.Audit"
+    );
+    assert_eq!(
+        permission_record_id(
+            ResourceKind::NeutrinoSecret,
+            RESOURCE_ID,
+            ResourceAction::Audit
+        ),
+        "rp_perm_neutrino_secret_res_42_b514137b_audit"
+    );
+    assert!(ResourceAction::WITH_REVEAL.contains(&ResourceAction::Audit));
+    assert!(!ResourceAction::STANDARD.contains(&ResourceAction::Audit));
 }
 
 /// A product-declared kind using the two actions the runtime apps added.

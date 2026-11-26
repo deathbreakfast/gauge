@@ -77,6 +77,7 @@ async fn seed_permission_world(permission_name: &str) -> SeededPermission {
 
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: permission_name.to_string(),
             description: "contract permission".to_string(),
             owners_group_id: group_id.clone(),
@@ -464,15 +465,9 @@ async fn permission_workflow_domain_grant_request_review_happy_path() {
         .expect("review queue");
     assert!(review.iter().any(|r| r.id == request.id));
 
-    let denied = service::decide_permission_request(
-        PermissionRequestDecisionInput {
-            request_id: request.id.clone(),
-            decision: PermissionRequestDecision::Deny,
-        },
-        &world.owner_ctx,
-    )
-    .await
-    .expect("deny");
+    let denied = service::deny_request(&request.id, "Not this quarter", &world.owner_ctx)
+        .await
+        .expect("deny");
     assert_eq!(
         denied.status,
         PermissionRequestStatusDto::Denied,
@@ -590,6 +585,7 @@ async fn duplicate_permission_and_group_names_rejected_sad() {
     let world = seed_permission_world("Unique Permission Name").await;
     let dup_perm = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "Unique Permission Name".to_string(),
             description: String::new(),
             owners_group_id: world.group_id,
@@ -624,6 +620,7 @@ async fn create_permission_missing_domain_rejected_sad() {
 
     let err = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "NeedsDomain".to_string(),
             description: String::new(),
             owners_group_id: record_pk_id(group.id()),
@@ -1099,6 +1096,7 @@ async fn create_permission_arbitrary_owners_group_rejected_sad() {
 
     let err = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "HijackedOwners".to_string(),
             description: "nope".to_string(),
             owners_group_id: world.group_id.clone(),
@@ -1558,15 +1556,9 @@ async fn group_request_deny_does_not_add_member_sad() {
     .await
     .expect("create group request");
 
-    let decided = service::decide_permission_request(
-        PermissionRequestDecisionInput {
-            request_id: created.id.clone(),
-            decision: PermissionRequestDecision::Deny,
-        },
-        &world.owner_ctx,
-    )
-    .await
-    .expect("deny");
+    let decided = service::deny_request(&created.id, "Not this quarter", &world.owner_ctx)
+        .await
+        .expect("deny");
     assert_eq!(decided.status, PermissionRequestStatusDto::Denied);
 
     let detail = service::get_group_detail(&target_id, &world.owner_ctx)

@@ -33,6 +33,7 @@
 //! [`crate::instrumentation`] (allow / deny / error).
 
 mod access;
+mod activity;
 mod domains;
 mod error;
 mod group_membership_bulk;
@@ -40,6 +41,7 @@ mod groups;
 pub(crate) mod helpers;
 mod holders;
 mod membership;
+mod people;
 mod permissions;
 mod requests;
 mod service_user_access_view;
@@ -48,8 +50,10 @@ mod service_user_members;
 /// Privacy-safe [`actor_can`] for `PolicyEvaluator`s — see [`crate::actor_can_raw`].
 pub use crate::actor_can_raw::{actor_can_raw, user_can_raw};
 pub use access::{
-    actor_can, can_edit_domain, can_edit_group, can_edit_permission, has_permission, user_can,
+    actor_can, actor_is_gauge_admin, can_edit_domain, can_edit_group, can_edit_permission,
+    has_permission, user_can, GAUGE_ADMIN,
 };
+pub use activity::{list_activity, list_resource_activity, ACTIVITY_PAGE_SIZE};
 pub use domains::{
     add_domain_owner_user, create_domain, delete_domain, get_domain_detail, list_domains,
     remove_domain_owner_user, update_domain,
@@ -62,18 +66,20 @@ pub use groups::{
     remove_group_member_group, remove_group_member_user, remove_group_owner_group,
     remove_group_owner_user, set_managed_group_status, update_group,
 };
-pub(crate) use helpers::raw_table_rows;
-pub use holders::list_permission_holders;
+pub use holders::{list_effective_holders, list_group_access, list_permission_holders};
+pub use people::{list_people, principal_access, principal_access_self, PEOPLE_PAGE_SIZE};
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
     grant_permission_to_group, grant_permission_to_service_user_checked, grant_permission_to_user,
-    list_groups, list_permissions, revoke_own_permission, revoke_permission_from_group,
-    revoke_permission_from_service_user, revoke_permission_from_user, update_permission,
+    list_groups, list_permissions, permission_display_name, revoke_own_permission,
+    revoke_permission_from_group, revoke_permission_from_service_user, revoke_permission_from_user,
+    set_permission_display_name, update_permission,
 };
 pub use requests::{
     actor_can_view_history_subject, create_permission_request, decide_permission_request,
-    get_permission_request_detail, list_history, list_pending_requests_for_service_user,
-    list_permission_requests_for_actor, list_permission_requests_for_review, MAX_HISTORY_LIST_ROWS,
+    deny_request, get_permission_request_detail, list_history,
+    list_pending_requests_for_service_user, list_permission_requests_for_actor,
+    list_permission_requests_for_review, withdraw_request, MAX_HISTORY_LIST_ROWS,
     MAX_REQUEST_REASON_CHARS,
 };
 pub use service_user_access_view::{list_service_user_groups, list_service_user_permissions};
