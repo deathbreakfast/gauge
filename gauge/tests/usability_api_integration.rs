@@ -556,6 +556,9 @@ async fn requester_cannot_approve_their_own_request_sad() {
             .unwrap()
             .commit()
             .await;
-        assert!(result.is_err(), "requester must not decide their own request");
+        assert!(
+            result.is_err(),
+            "requester must not decide their own request"
+        );
     }
 }
