@@ -162,7 +162,7 @@ async fn ensure_permission(
 
     let now = Utc::now();
     let record = Permission::new(
-        created_by,
+        Some(created_by),
         owners_group_thing,
         domain_thing,
         permission.name.clone(),

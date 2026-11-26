@@ -155,7 +155,7 @@ async fn ensure_permission_row(
 
     let now = Utc::now();
     let permission = Permission::new(
-        RecordId::new("user", creator_user_id),
+        Some(RecordId::new("user", creator_user_id)),
         RecordId::new("permission_group", owners_group_id),
         domain_rid.clone(),
         name.clone(),

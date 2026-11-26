@@ -1417,7 +1417,7 @@ async fn app_admin_group_grants_permission_and_super_users_inherit_but_admins_do
     )
     .await?;
     let perm = gauge::generated::Permission::new(
-        valence::RecordId::new("user", "system"),
+        Some(valence::RecordId::new("user", "system")),
         valence::RecordId::new("permission_group", SUPER_USER_GROUP_ID),
         valence::RecordId::new("permission_domain", "lepton_test_domain"),
         "LeptonManageDelivery".into(),

@@ -48,7 +48,7 @@ async fn seed_permission_owned_by_group(
     .await?;
     let now = Utc::now();
     let permission = Permission::new(
-        valence::RecordId::new("user", "owner_u1"),
+        Some(valence::RecordId::new("user", "owner_u1")),
         valence::RecordId::new("permission_group", owners_group_id),
         domain.id().expect("domain id exists").clone(),
         format!("perm-{permission_id}"),
@@ -307,7 +307,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
     assert_eq!(group_created.name(), "created-by-auth-user");
 
     let permission = Permission::new(
-        valence::RecordId::new("user", owner_user),
+        Some(valence::RecordId::new("user", owner_user)),
         valence::RecordId::new("permission_group", group_id),
         valence::RecordId::new("permission_domain", "domain_policy"),
         "perm-create-auth".to_string(),
@@ -319,7 +319,7 @@ async fn permission_create_allowed_for_authenticated_and_denied_for_anonymous() 
     assert_eq!(permission_created.name(), "perm-create-auth");
 
     let permission_anon = Permission::new(
-        valence::RecordId::new("user", owner_user),
+        Some(valence::RecordId::new("user", owner_user)),
         valence::RecordId::new("permission_group", group_id),
         valence::RecordId::new("permission_domain", "domain_policy"),
         "perm-create-anon".to_string(),

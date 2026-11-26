@@ -8,7 +8,7 @@ valence_schema! {
     Permission {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission",
-        version: "0.1.1",
+        version: "0.1.2",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Permission object defining allow-list principals and owners group",
 
@@ -40,9 +40,10 @@ valence_schema! {
                 primary_key: true,
                 required: true,
             },
+            // Optional so a user wipe clears it instead of being blocked by it.
             created_by: {
                 r#type: FieldType::Record("user"),
-                required: true,
+                required: false,
             },
             owners_group: {
                 r#type: FieldType::Record("permission_group"),
@@ -58,8 +59,8 @@ valence_schema! {
             created_by: {
                 table: "user",
                 cardinality: HasOne,
-                required: true,
-                on_delete: Restrict,
+                required: false,
+                on_delete: SetNull,
                 model: "lepton::generated::User",
             },
             owners_group: {

@@ -145,7 +145,7 @@ pub fn request_target_record(
 ///
 /// This checks direct user grants and grants inherited through allowed groups
 /// (including nested group membership). A registered service user holds a permission
-/// only through groups it is a member of, and only while it is active (see
+/// granted straight to it or through groups it is a member of, and only while it is active (see
 /// [`crate::service_users`]). Built-in service users and anonymous callers hold nothing.
 pub async fn actor_can(v: &Valence, permission_name: &str) -> anyhow::Result<bool> {
     let permission_name = permission_name.trim();

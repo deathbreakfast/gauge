@@ -226,7 +226,7 @@ async fn seed_demo_permission(
     let permission = Permission::upsert(
         "can-deploy",
         Permission::new(
-            RecordId::new("user", "owner-1"),
+            Some(RecordId::new("user", "owner-1")),
             RecordId::new("permission_group", "deployers"),
             domain.id().expect("domain id").clone(),
             permission_name.clone(),

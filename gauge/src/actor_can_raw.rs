@@ -48,7 +48,7 @@ fn note_raw_read() {
 /// System elevate).
 ///
 /// System actors always allow. Missing / anonymous actors deny. A registered service
-/// user is allowed only through groups it is a member of, while active (see
+/// user is allowed through a direct grant or groups it is a member of, while active (see
 /// [`crate::service_users`]); built-in service users deny.
 ///
 /// # Errors
