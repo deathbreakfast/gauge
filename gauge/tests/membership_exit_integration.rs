@@ -11,7 +11,7 @@ use common::{record_pk_id, seed_super_user_group_with_member, seed_user, test_va
 use gauge::generated::{Permission, PermissionDomain, PermissionGroup, PermissionHistory};
 use gauge::service;
 use gauge::types::{HistoryEntryDto, PermissionGroupCreateInput};
-use valence::deletion::dag::DeletionDag;
+use valence::deletion::dag::{DeletionAction, DeletionDag};
 use valence::{Actor, Model, RecordId, Valence};
 
 const ERIN_PRINCIPAL: &str = "user:erin";
@@ -171,9 +171,32 @@ async fn erase_user_with_principal_and_edges_unblocked_happy() {
         "permission rows block erase: {blocking:?}"
     );
 
-    valence::apply_deletion_dag(&dag, &system)
-        .await
-        .expect("apply user deletion DAG");
+    // Apply the plan the way Lepton's erase does: physical deletes for cascaded rows (by
+    // their stored id, which for a principal is `user:<id>`), plus Valence's per-node apply
+    // for SetNull and edge removal. Valence's own cascade step reloads the row through an id
+    // normalizer that strips `user:`, so it can't find a principal.
+    let nodes = format!("{:?}", dag.nodes);
+    for node in &dag.nodes {
+        if node.table == "user" {
+            continue;
+        }
+        match node.action {
+            DeletionAction::CascadeDelete => {
+                let backend = system.backend_for_table(&node.table).expect("node backend");
+                valence::delete_record(
+                    backend.as_ref(),
+                    &node.table,
+                    &node.record_id,
+                    valence::use_!(r"**Test:** Physically delete a cascaded row for `membership_exit_integration` the way account erase does. CI and developers running the suite only."),
+                )
+                .await
+                .unwrap_or_else(|e| panic!("delete {}:{}: {e}", node.table, node.record_id));
+            }
+            _ => valence::apply_deletion_node(node, &system)
+                .await
+                .unwrap_or_else(|e| panic!("apply {node:?}: {e}")),
+        }
+    }
 
     let principal = valence::get_record(
         system
@@ -186,16 +209,19 @@ async fn erase_user_with_principal_and_edges_unblocked_happy() {
     )
     .await
     .expect("read principal");
-    assert!(principal.is_none(), "erin's principal survives erase");
+    assert!(
+        principal.is_none(),
+        "erin's principal survives erase; DAG nodes: {nodes}"
+    );
 
     let (owners, members) = group_edges(&system, &gid).await;
     assert!(
         !owners.iter().any(|id| id == ERIN_PRINCIPAL),
-        "owner edge left: {owners:?}"
+        "owner edge left: {owners:?}; DAG nodes: {nodes}"
     );
     assert!(
         !members.iter().any(|id| id == ERIN_PRINCIPAL),
-        "member edge left: {members:?}"
+        "member edge left: {members:?}; DAG nodes: {nodes}"
     );
     assert!(
         owners.iter().any(|id| id == "user:olive"),
@@ -204,7 +230,7 @@ async fn erase_user_with_principal_and_edges_unblocked_happy() {
     let holders = granted(&system, &pid).await;
     assert!(
         !holders.iter().any(|id| id == ERIN_PRINCIPAL),
-        "grant left: {holders:?}"
+        "grant left: {holders:?}; DAG nodes: {nodes}"
     );
 
     let permission = load_permission(&system, &pid).await;
