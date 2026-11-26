@@ -52,7 +52,7 @@ pub async fn ensure_service_user_principal(
         })
 }
 
-pub(super) async fn get_service_user_principal_raw(
+pub async fn get_service_user_principal_raw(
     service_user: &ServiceUserId,
     v: &Valence,
 ) -> anyhow::Result<Option<PermissionServiceUserPrincipal>> {

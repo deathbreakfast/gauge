@@ -29,6 +29,9 @@
 //! | Who can act on a resource | [Who can act on a resource](crate#who-can-act-on-a-resource) |
 //! | Tear down per-resource ACL | [`crate::resource_permissions::delete_resource_permission_bundle`] |
 //! | Revoke standing umbrella grants | [`crate::resource_permissions::revoke_umbrella_grants`] |
+//! | Roles over a bundle (Can view, Can run, …) | [`crate::resource_permissions::roles`] |
+//! | Give or take away one principal's role | [`crate::resource_permissions::set_principal_role`] / [`crate::resource_permissions::remove_principal`] |
+//! | Restrict one resource to its own grants | [`crate::resource_permissions::set_umbrella_removed`] |
 //! | Typed host-wiring errors | [`crate::resource_permissions::ResourcePermissionError`] |
 //! | Permission name for `actor_can` | [`crate::resource_permissions::permission_name`] |
 //! | Resources of a kind the caller can act on | [`crate::resource_permissions::actor_resource_ids_with_any`] |
@@ -83,6 +86,7 @@
 //! remains the live migration helper (e.g. Neutrino Chronon script). A later
 //! Gauge publish can retire the enum once those consumers migrate.
 
+mod access;
 mod actor_id;
 mod actor_resources;
 mod default_groups;
@@ -93,8 +97,10 @@ mod golden_names;
 mod kinds;
 mod policy;
 mod revoke_umbrella_grants;
+pub mod roles;
 mod spec;
 
+pub use access::{remove_principal, set_principal_role, set_umbrella_removed};
 pub use actor_id::ActorId;
 pub use actor_resources::actor_resource_ids_with_any;
 pub use default_groups::{

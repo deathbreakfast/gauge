@@ -8,10 +8,12 @@ use common::{seed_user, test_valence};
 use gauge::resource_permissions::{
     delete_resource_permission_bundle, ensure_group_granted_permission,
     ensure_resource_permission_bundle, ensure_resource_permission_bundle_for_group,
-    permission_name, seed_resource_kind_catalog, ActorId, ResourceAction, ResourceKind,
-    ResourcePermissionError, ResourcePermissionPolicy, ResourcePermissionSpec, UmbrellaPolicy,
+    permission_name, remove_principal, roles::Role, seed_resource_kind_catalog, set_principal_role,
+    set_umbrella_removed, ActorId, ResourceAction, ResourceKind, ResourcePermissionError,
+    ResourcePermissionPolicy, ResourcePermissionSpec, UmbrellaPolicy,
 };
 use gauge::service;
+use gauge::types::PrincipalKind;
 use valence::{Actor, JsonActorContext, Model, PolicyEvaluator, PrivacyOperation};
 
 async fn system_valence() -> valence::Valence {
@@ -831,6 +833,7 @@ async fn resource_permission_list_browsable_for_outsider_happy() -> anyhow::Resu
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // a deep group-nest fixture built in full, then the checks
 async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<()> {
     const DEPTH: usize = 5;
     /// Super-user probe + permission query + principals + nested group hops.
@@ -863,6 +866,9 @@ async fn actor_can_raw_deep_nest_allows_with_bounded_reads() -> anyhow::Result<(
         let g = gauge::generated::PermissionGroup::upsert(
             &gid,
             gauge::generated::PermissionGroup::new(
+                None,
+                None,
+                None,
                 format!("Nest {i}"),
                 None,
                 chrono::Utc::now(),
@@ -974,6 +980,9 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
     let g1 = gauge::generated::PermissionGroup::upsert(
         "cycle_g1",
         gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
             "Cycle 1".into(),
             None,
             chrono::Utc::now(),
@@ -986,6 +995,9 @@ async fn actor_can_raw_matches_actor_can_and_terminates_on_cycle() -> anyhow::Re
     let g2 = gauge::generated::PermissionGroup::upsert(
         "cycle_g2",
         gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
             "Cycle 2".into(),
             None,
             chrono::Utc::now(),
@@ -1219,6 +1231,9 @@ async fn super_user_acts_on_foreign_bundle_without_grant() -> anyhow::Result<()>
     let fake = gauge::generated::PermissionGroup::upsert(
         "fake_super_display_only",
         gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
             gauge::super_user::SUPER_USER_GROUP_NAME.to_string(),
             None,
             chrono::Utc::now(),
@@ -1257,7 +1272,15 @@ async fn group_owned_bundle_lets_member_reveal_without_elevation_and_denies_stra
     let now = chrono::Utc::now();
     gauge::generated::PermissionGroup::upsert(
         group_id,
-        gauge::generated::PermissionGroup::new("Delivery admins".into(), None, now, now)?,
+        gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
+            "Delivery admins".into(),
+            None,
+            now,
+            now,
+        )?,
         &system,
         valence::use_!(r"**Test:** Fixture **Permission Group** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
@@ -1380,6 +1403,7 @@ async fn app_admin_group_grants_permission_and_super_users_inherit_but_admins_do
     let domain = gauge::generated::PermissionDomain::new(
         false,
         None,
+        false,
         "Lepton".into(),
         Some("test domain".into()),
         now,
@@ -1553,7 +1577,15 @@ async fn actor_resource_ids_counts_maintain_direct_and_group_grants_happy() -> a
     let now = chrono::Utc::now();
     gauge::generated::PermissionGroup::upsert(
         "ari_editors",
-        gauge::generated::PermissionGroup::new("ARI editors".into(), None, now, now)?,
+        gauge::generated::PermissionGroup::new(
+            None,
+            None,
+            None,
+            "ARI editors".into(),
+            None,
+            now,
+            now,
+        )?,
         &system,
         valence::use_!(r"**Test:** Fixture **Permission Group** save for `resource_permissions_integration` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."),
     )
@@ -1641,4 +1673,473 @@ async fn actor_resource_ids_counts_umbrella_grants_and_denies_strangers_sad() ->
     .await?
     .is_empty());
     Ok(())
+}
+
+// ---- Roles over a bundle, last-owner guard, restricting one resource ---------------------
+
+/// A runtime-app-like kind with Run: View, Run, Edit, Delete, Maintain.
+const JOB: gauge::resource_permissions::ResourceKindDescriptor =
+    gauge::resource_permissions::ResourceKindDescriptor {
+        prefix: "test_job",
+        display_label: "Test job",
+        actions: &[
+            ResourceAction::View,
+            ResourceAction::Run,
+            ResourceAction::Edit,
+            ResourceAction::Delete,
+            ResourceAction::Maintain,
+        ],
+        umbrella: UmbrellaPolicy::KindWide,
+        groups: gauge::resource_permissions::KindDefaultGroups {
+            creators: "test.job.creators",
+            viewers: "test.job.viewers",
+            editors: "test.job.editors",
+            operators: "test.job.operators",
+        },
+        create_permission: "CreateTestJobs",
+    };
+
+/// Seed the job kind's catalog and a bundle for `job_id` owned by `owner`.
+async fn seed_job_bundle(system: &valence::Valence, job_id: &str, owner: &str) {
+    seed_resource_kind_catalog(
+        system,
+        JOB,
+        "rp_catalog_test_job",
+        "Test job create",
+        "rp_perm_create_test_jobs",
+    )
+    .await
+    .expect("seed job catalog");
+    seed_user(owner, &format!("{owner}@example.test"), system).await;
+    ensure_resource_permission_bundle(
+        system,
+        ResourcePermissionSpec {
+            kind: JOB,
+            resource_id: job_id.into(),
+            display_name: format!("Job {job_id}"),
+            actions: vec![],
+            actor: ActorId::user_for_system(system, owner).expect("actor"),
+        },
+    )
+    .await
+    .expect("ensure job bundle");
+}
+
+/// Which of the job's actions `user` holds on `job_id`.
+async fn job_actions(system: &valence::Valence, user: &str, job_id: &str) -> Vec<ResourceAction> {
+    let v = user_valence(system, user);
+    let mut held = Vec::new();
+    for action in JOB.actions {
+        if service::actor_can(&v, &permission_name(JOB, job_id, *action))
+            .await
+            .expect("actor_can")
+        {
+            held.push(*action);
+        }
+    }
+    held
+}
+
+fn assert_last_owner(err: &ResourcePermissionError) {
+    assert!(
+        matches!(err, ResourcePermissionError::LastOwner { .. }),
+        "expected LastOwner, got {err}"
+    );
+}
+
+fn assert_service_error(
+    err: &ResourcePermissionError,
+    want: fn(&service::GaugeServiceError) -> bool,
+) {
+    let ResourcePermissionError::GaugeService { source, .. } = err else {
+        panic!("expected GaugeService, got {err}");
+    };
+    let inner = source
+        .downcast_ref::<service::GaugeServiceError>()
+        .unwrap_or_else(|| panic!("expected a GaugeServiceError, got {source:#}"));
+    assert!(want(inner), "unexpected service error: {inner}");
+}
+
+const ALL_JOB_ACTIONS: [ResourceAction; 5] = [
+    ResourceAction::View,
+    ResourceAction::Run,
+    ResourceAction::Edit,
+    ResourceAction::Delete,
+    ResourceAction::Maintain,
+];
+
+#[tokio::test]
+async fn set_principal_role_replaces_grants_happy() {
+    let system = system_valence().await;
+    seed_job_bundle(&system, "rollup", "job_owner").await;
+    seed_user("bob", "bob@example.test", &system).await;
+    let owner = user_valence(&system, "job_owner");
+    let bob = (PrincipalKind::User, "bob");
+
+    set_principal_role(&owner, JOB, "rollup", bob.clone(), Role::Edit)
+        .await
+        .expect("Can edit");
+    assert_eq!(
+        job_actions(&system, "bob", "rollup").await,
+        vec![
+            ResourceAction::View,
+            ResourceAction::Run,
+            ResourceAction::Edit
+        ]
+    );
+
+    set_principal_role(&owner, JOB, "rollup", bob.clone(), Role::View)
+        .await
+        .expect("Can view");
+    assert_eq!(
+        job_actions(&system, "bob", "rollup").await,
+        vec![ResourceAction::View],
+        "Run and Edit are revoked when the role shrinks"
+    );
+
+    // Setting the same role again writes nothing and changes nothing.
+    set_principal_role(&owner, JOB, "rollup", bob.clone(), Role::View)
+        .await
+        .expect("same role");
+    assert_eq!(
+        job_actions(&system, "bob", "rollup").await,
+        vec![ResourceAction::View]
+    );
+
+    remove_principal(&owner, JOB, "rollup", bob)
+        .await
+        .expect("remove bob");
+    assert!(job_actions(&system, "bob", "rollup").await.is_empty());
+}
+
+#[tokio::test]
+async fn owner_role_promotes_and_demotes_happy() {
+    let system = system_valence().await;
+    seed_job_bundle(&system, "rollup", "job_owner").await;
+    seed_user("bob", "bob@example.test", &system).await;
+    seed_user("carol", "carol@example.test", &system).await;
+    let owner = user_valence(&system, "job_owner");
+
+    set_principal_role(
+        &owner,
+        JOB,
+        "rollup",
+        (PrincipalKind::User, "bob"),
+        Role::Run,
+    )
+    .await
+    .expect("Can run");
+    set_principal_role(
+        &owner,
+        JOB,
+        "rollup",
+        (PrincipalKind::User, "bob"),
+        Role::Owner,
+    )
+    .await
+    .expect("promote bob");
+    assert_eq!(job_actions(&system, "bob", "rollup").await, ALL_JOB_ACTIONS);
+
+    // Bob now maintains the job under his own session.
+    let bob = user_valence(&system, "bob");
+    set_principal_role(
+        &bob,
+        JOB,
+        "rollup",
+        (PrincipalKind::User, "carol"),
+        Role::Run,
+    )
+    .await
+    .expect("bob grants carol");
+    assert_eq!(
+        job_actions(&system, "carol", "rollup").await,
+        vec![ResourceAction::View, ResourceAction::Run]
+    );
+
+    // With two owners, the first can step down to Can view.
+    set_principal_role(
+        &bob,
+        JOB,
+        "rollup",
+        (PrincipalKind::User, "job_owner"),
+        Role::View,
+    )
+    .await
+    .expect("demote job_owner");
+    assert_eq!(
+        job_actions(&system, "job_owner", "rollup").await,
+        vec![ResourceAction::View]
+    );
+}
+
+#[tokio::test]
+async fn group_owner_role_reaches_the_group_owners_happy() {
+    let system = system_valence().await;
+    seed_job_bundle(&system, "rollup", "job_owner").await;
+    common::seed_group_with_owner(&system, "team_ops", "team_lead").await;
+    let owner = user_valence(&system, "job_owner");
+
+    set_principal_role(
+        &owner,
+        JOB,
+        "rollup",
+        (PrincipalKind::Group, "team_ops"),
+        Role::Owner,
+    )
+    .await
+    .expect("team owns the job");
+    assert_eq!(
+        job_actions(&system, "team_lead", "rollup").await,
+        ALL_JOB_ACTIONS
+    );
+
+    set_principal_role(
+        &owner,
+        JOB,
+        "rollup",
+        (PrincipalKind::Group, "team_ops"),
+        Role::Run,
+    )
+    .await
+    .expect("team demoted to Can run");
+    assert_eq!(
+        job_actions(&system, "team_lead", "rollup").await,
+        vec![ResourceAction::View, ResourceAction::Run]
+    );
+}
+
+#[tokio::test]
+async fn last_owner_cannot_be_removed_or_demoted_sad() {
+    let system = system_valence().await;
+    seed_job_bundle(&system, "rollup", "job_owner").await;
+    seed_user("bob", "bob@example.test", &system).await;
+    let owner = user_valence(&system, "job_owner");
+    let me = (PrincipalKind::User, "job_owner");
+
+    assert_last_owner(
+        &set_principal_role(&owner, JOB, "rollup", me.clone(), Role::Edit)
+            .await
+            .expect_err("demote the only owner"),
+    );
+    assert_last_owner(
+        &remove_principal(&owner, JOB, "rollup", me.clone())
+            .await
+            .expect_err("remove the only owner"),
+    );
+    assert_eq!(
+        job_actions(&system, "job_owner", "rollup").await,
+        ALL_JOB_ACTIONS,
+        "a refused change writes nothing"
+    );
+
+    // A second owner, then the second owner steps down: still refused once alone again.
+    set_principal_role(
+        &owner,
+        JOB,
+        "rollup",
+        (PrincipalKind::User, "bob"),
+        Role::Owner,
+    )
+    .await
+    .expect("promote bob");
+    remove_principal(&owner, JOB, "rollup", (PrincipalKind::User, "bob"))
+        .await
+        .expect("bob removed while job_owner remains");
+    assert!(job_actions(&system, "bob", "rollup").await.is_empty());
+    assert_last_owner(
+        &remove_principal(&owner, JOB, "rollup", me)
+            .await
+            .expect_err("alone again"),
+    );
+}
+
+#[tokio::test]
+async fn role_changes_need_maintain_and_an_offered_role_sad() {
+    let system = system_valence().await;
+    seed_job_bundle(&system, "rollup", "job_owner").await;
+    seed_user("mallory", "mallory@example.test", &system).await;
+    seed_user("bob", "bob@example.test", &system).await;
+    let owner = user_valence(&system, "job_owner");
+    let mallory = user_valence(&system, "mallory");
+
+    assert_service_error(
+        &set_principal_role(
+            &mallory,
+            JOB,
+            "rollup",
+            (PrincipalKind::User, "mallory"),
+            Role::Owner,
+        )
+        .await
+        .expect_err("no Maintain"),
+        |e| matches!(e, service::GaugeServiceError::NotAuthorized { .. }),
+    );
+    assert_service_error(
+        &set_umbrella_removed(&mallory, JOB, "rollup", true)
+            .await
+            .expect_err("no Maintain"),
+        |e| matches!(e, service::GaugeServiceError::NotAuthorized { .. }),
+    );
+    assert!(job_actions(&system, "mallory", "rollup").await.is_empty());
+
+    let owners_group = gauge::resource_permissions::owners_group_id(JOB, "rollup");
+    let is_validation =
+        |e: &service::GaugeServiceError| matches!(e, service::GaugeServiceError::Validation { .. });
+    assert_service_error(
+        &set_principal_role(
+            &owner,
+            JOB,
+            "rollup",
+            (PrincipalKind::User, "bob"),
+            Role::ReadUnmasked,
+        )
+        .await
+        .expect_err("jobs have no Unmask"),
+        is_validation,
+    );
+    assert_service_error(
+        &set_principal_role(
+            &owner,
+            JOB,
+            "rollup",
+            (PrincipalKind::User, "bob"),
+            Role::Custom(vec!["Edit".into()]),
+        )
+        .await
+        .expect_err("Custom is not settable"),
+        is_validation,
+    );
+    assert_service_error(
+        &set_principal_role(
+            &owner,
+            JOB,
+            "rollup",
+            (PrincipalKind::Group, &owners_group),
+            Role::View,
+        )
+        .await
+        .expect_err("the owners group itself"),
+        is_validation,
+    );
+    assert_service_error(
+        &set_principal_role(
+            &owner,
+            JOB,
+            "never-made",
+            (PrincipalKind::User, "bob"),
+            Role::View,
+        )
+        .await
+        .expect_err("no bundle"),
+        |e| matches!(e, service::GaugeServiceError::NotFound { .. }),
+    );
+    assert!(job_actions(&system, "bob", "rollup").await.is_empty());
+}
+
+#[tokio::test]
+async fn umbrella_flag_survives_ensure_and_clears_happy() {
+    let system = system_valence().await;
+    seed_job_bundle(&system, "rollup", "job_owner").await;
+    seed_user("viewer", "viewer@example.test", &system).await;
+    service::add_group_member_user("test.job.viewers", "viewer", &system)
+        .await
+        .expect("viewer joins the kind's viewers");
+    let owner = user_valence(&system, "job_owner");
+    assert_eq!(
+        job_actions(&system, "viewer", "rollup").await,
+        vec![ResourceAction::View]
+    );
+
+    set_umbrella_removed(&owner, JOB, "rollup", true)
+        .await
+        .expect("restrict");
+    assert!(job_actions(&system, "viewer", "rollup").await.is_empty());
+    let domain = gauge::generated::PermissionDomain::get(
+        &gauge::resource_permissions::domain_id(JOB, "rollup"),
+        &system,
+        valence::use_!(r"**Test:** Load a resource bundle's **Permission Domain** for `resource_permissions_integration` so the suite can assert its restriction flag. CI and developers running the suite only."),
+    )
+    .await
+    .expect("get domain")
+    .expect("domain");
+    assert!(*domain.umbrella_removed());
+
+    // A reboot re-runs ensure; the restriction holds.
+    ensure_resource_permission_bundle(
+        &system,
+        ResourcePermissionSpec {
+            kind: JOB,
+            resource_id: "rollup".into(),
+            display_name: "Job rollup".into(),
+            actions: vec![],
+            actor: ActorId::user_for_system(&system, "job_owner").expect("actor"),
+        },
+    )
+    .await
+    .expect("re-ensure");
+    assert!(job_actions(&system, "viewer", "rollup").await.is_empty());
+    assert_eq!(
+        job_actions(&system, "job_owner", "rollup").await,
+        ALL_JOB_ACTIONS,
+        "owners keep every action"
+    );
+
+    set_umbrella_removed(&owner, JOB, "rollup", false)
+        .await
+        .expect("open again");
+    assert_eq!(
+        job_actions(&system, "viewer", "rollup").await,
+        vec![ResourceAction::View]
+    );
+}
+
+#[tokio::test]
+async fn group_seeded_bundle_is_owned_by_the_group_happy() {
+    let system = system_valence().await;
+    seed_resource_kind_catalog(
+        &system,
+        JOB,
+        "rp_catalog_test_job",
+        "Test job create",
+        "rp_perm_create_test_jobs",
+    )
+    .await
+    .expect("seed job catalog");
+    common::seed_group_with_owner(&system, "test.job.admins", "admin_lead").await;
+    seed_user("bob", "bob@example.test", &system).await;
+    ensure_resource_permission_bundle_for_group(
+        &system,
+        JOB,
+        "nightly",
+        "Nightly",
+        &[],
+        "test.job.admins",
+    )
+    .await
+    .expect("seed group bundle");
+
+    let admin_lead = user_valence(&system, "admin_lead");
+    set_principal_role(
+        &admin_lead,
+        JOB,
+        "nightly",
+        (PrincipalKind::User, "bob"),
+        Role::Run,
+    )
+    .await
+    .expect("admin group's owner manages access");
+    assert_eq!(
+        job_actions(&system, "bob", "nightly").await,
+        vec![ResourceAction::View, ResourceAction::Run]
+    );
+    assert_last_owner(
+        &remove_principal(
+            &admin_lead,
+            JOB,
+            "nightly",
+            (PrincipalKind::Group, "test.job.admins"),
+        )
+        .await
+        .expect_err("the admin group is the only owner"),
+    );
 }

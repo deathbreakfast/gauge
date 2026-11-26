@@ -28,6 +28,9 @@ async fn ensure_standalone_group(
     }
     let now = Utc::now();
     let group = PermissionGroup::new(
+        None,
+        None,
+        None,
         display_name.to_string(),
         Some(description.to_string()),
         now,

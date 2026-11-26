@@ -5,9 +5,10 @@
 //! data migration, so a failure here means the refactor moved a wire name and the
 //! fix belongs in the code under test, not in the table below.
 
+use super::default_groups::KindDefaultGroups;
 use super::kinds::{
     domain_id, owners_group_id, permission_name, permission_record_id, ResourceAction,
-    ResourceKind, UmbrellaPolicy,
+    ResourceKind, ResourceKindDescriptor, UmbrellaPolicy,
 };
 
 /// Fixed input id. Its sanitized form is `res_42` and its FNV-1a digest is `b514137b`.
@@ -246,6 +247,50 @@ fn action_suffixes_are_golden() {
     assert_eq!(ResourceAction::Delete.as_str(), "Delete");
     assert_eq!(ResourceAction::Maintain.as_str(), "Maintain");
     assert_eq!(ResourceAction::Reveal.as_str(), "Reveal");
+    assert_eq!(ResourceAction::Run.as_str(), "Run");
+    assert_eq!(ResourceAction::Unmask.as_str(), "Unmask");
+}
+
+/// A product-declared kind using the two actions the runtime apps added.
+const RUNTIME_KIND: ResourceKindDescriptor = ResourceKindDescriptor {
+    prefix: "chronon_job",
+    display_label: "Chronon job",
+    actions: &[
+        ResourceAction::View,
+        ResourceAction::Run,
+        ResourceAction::Unmask,
+        ResourceAction::Maintain,
+    ],
+    umbrella: UmbrellaPolicy::KindWide,
+    groups: KindDefaultGroups {
+        creators: "chronon.job.creators",
+        viewers: "chronon.job.viewers",
+        editors: "chronon.job.editors",
+        operators: "chronon.job.operators",
+    },
+    create_permission: "CreateChrononJobs",
+};
+
+#[test]
+fn run_and_unmask_names_are_golden() {
+    for (action, name, record_id) in [
+        (
+            ResourceAction::Run,
+            "chronon_job.res_42_b514137b.Run",
+            "rp_perm_chronon_job_res_42_b514137b_run",
+        ),
+        (
+            ResourceAction::Unmask,
+            "chronon_job.res_42_b514137b.Unmask",
+            "rp_perm_chronon_job_res_42_b514137b_unmask",
+        ),
+    ] {
+        assert_eq!(permission_name(RUNTIME_KIND, RESOURCE_ID, action), name);
+        assert_eq!(
+            permission_record_id(RUNTIME_KIND, RESOURCE_ID, action),
+            record_id
+        );
+    }
 }
 
 #[test]

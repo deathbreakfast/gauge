@@ -252,6 +252,7 @@ async fn domain_resource_scoped_rejects_human_mutate_sad() {
     let scoped = PermissionDomain::new(
         true,
         Some("res-1".to_string()),
+        false,
         "ScopedDomain".to_string(),
         Some("bundle plumbing".to_string()),
         Utc::now(),
@@ -979,6 +980,7 @@ async fn get_permission_request_detail_unauthorized_viewer_sad() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // two group fixtures built in full, then the assertions
 async fn duplicate_named_super_user_group_does_not_grant_privilege_sad() {
     use chrono::Utc;
     use gauge::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID, SUPER_USER_GROUP_NAME};
@@ -993,6 +995,9 @@ async fn duplicate_named_super_user_group_does_not_grant_privilege_sad() {
     seed_user("attacker", "attacker@example.com", &system).await;
 
     let super_group = gauge::generated::PermissionGroup::new(
+        None,
+        None,
+        None,
         SUPER_USER_GROUP_NAME.to_string(),
         Some("super users".to_string()),
         Utc::now(),
@@ -1030,6 +1035,9 @@ async fn duplicate_named_super_user_group_does_not_grant_privilege_sad() {
         .expect("relate legit member");
 
     let fake = gauge::generated::PermissionGroup::new(
+        None,
+        None,
+        None,
         SUPER_USER_GROUP_NAME.to_string(),
         Some("imposter".to_string()),
         Utc::now(),
@@ -1280,6 +1288,7 @@ async fn authenticated_user_cannot_mutate_domain_via_valence_sad() {
     let hijacked = PermissionDomain::new(
         false,
         None,
+        false,
         "Hijacked".to_string(),
         Some("blocked".to_string()),
         Utc::now(),

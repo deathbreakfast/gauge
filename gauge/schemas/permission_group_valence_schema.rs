@@ -8,7 +8,7 @@ valence_schema! {
     PermissionGroup {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission_group",
-        version: "0.1.1",
+        version: "0.2.0",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Permission user group with owner and member relationships",
 
@@ -39,6 +39,22 @@ valence_schema! {
                 r#type: FieldType::String,
                 primary_key: true,
                 required: true,
+            },
+            // Product that owns this group's members (e.g. `polaron`). When set, member
+            // edits are refused unless the actor is System; the owning product syncs them.
+            managed_by: {
+                r#type: FieldType::String,
+                required: false,
+            },
+            // The owning product's id for what this group mirrors (e.g. a team id).
+            external_ref: {
+                r#type: FieldType::String,
+                required: false,
+            },
+            // `active` or `archived` for a managed group; absent otherwise.
+            managed_status: {
+                r#type: FieldType::String,
+                required: false,
             },
         ],
 

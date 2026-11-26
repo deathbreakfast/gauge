@@ -3,7 +3,7 @@ use valence::{Model, RecordId, Valence};
 
 use crate::generated::PermissionGroup;
 use crate::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID, SUPER_USER_GROUP_NAME};
-use crate::types::{HistoryDiffItemDto, PermissionGroupCreateInput};
+use crate::types::{HistoryDiffItemDto, ManagedStatus, PermissionGroupCreateInput};
 
 use super::helpers::{
     canonical_user_id, ensure_group_principal, ensure_user_principal, get_group_principal_raw,
@@ -127,6 +127,9 @@ async fn create_group_with(
 
     let now = Utc::now();
     let group = PermissionGroup::new(
+        None,
+        None,
+        None,
         name,
         if input.description.trim().is_empty() {
             None
@@ -168,6 +171,13 @@ async fn create_group_with(
 /// so a group someone else created under the same id first is never taken for the managed
 /// one.
 ///
+/// `managed_by` names the product that manages the group's members (for example `polaron`)
+/// and `external_ref` that product's id for what the group mirrors (a team id). With
+/// `managed_by` set the group starts with `managed_status = active`, and member edits are
+/// refused unless the caller is System, so only the managing product's sync changes members.
+/// Owners can still grant the group permissions and nest it in other groups. `None` creates
+/// an ordinary group. An existing group is returned unchanged, management fields included.
+///
 /// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
 /// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
 /// request that elevated midway.
@@ -175,9 +185,15 @@ async fn create_group_with(
 /// they are a super user.
 ///
 /// ```ignore
-/// let group = service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system).await?;
+/// let group = service::create_managed_group(
+///     "polaron_team_ops", "Ops", "", Some("alice"), Some("polaron"), Some("ops"), &system,
+/// )
+/// .await?;
 /// // Running it again returns the same group and changes nothing.
-/// service::create_managed_group("team_ops", "Ops", "", Some("alice"), &system).await?;
+/// service::create_managed_group(
+///     "polaron_team_ops", "Ops", "", Some("alice"), Some("polaron"), Some("ops"), &system,
+/// )
+/// .await?;
 /// ```
 ///
 /// # Errors
@@ -196,6 +212,8 @@ pub async fn create_managed_group(
     name: &str,
     description: &str,
     owner_user: Option<&str>,
+    managed_by: Option<&str>,
+    external_ref: Option<&str>,
     v: &Valence,
 ) -> anyhow::Result<PermissionGroup> {
     let actor_user_id = require_writer_id(v)?;
@@ -257,7 +275,20 @@ pub async fn create_managed_group(
     }
 
     let now = Utc::now();
+    let managed_by = managed_by
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    let managed_status = managed_by
+        .as_ref()
+        .map(|_| ManagedStatus::Active.as_str().to_string());
     let group = PermissionGroup::new(
+        managed_by,
+        external_ref
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+            .map(str::to_string),
+        managed_status,
         name.to_string(),
         if description.trim().is_empty() {
             None
@@ -277,6 +308,48 @@ pub async fn create_managed_group(
     )
     .await?;
     Ok(created)
+}
+
+/// Record the managing product's status for a managed group: `active` or `archived`.
+///
+/// The managing product's sync calls this, for example when a team is archived (after emptying
+/// the group with [`super::clear_group_members`]) or restored. Grants on the group are left
+/// alone. Setting the status the group already has changes nothing. The change is recorded in
+/// the group's history.
+///
+/// System only: the sync starts as System, and nobody else speaks for the managing product.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError) (via `anyhow`): `NotAuthorized` for any
+/// caller other than System, `NotFound` when the group doesn't exist, `Validation` when the
+/// group isn't managed. Valence failures otherwise.
+pub async fn set_managed_group_status(
+    group_id: &str,
+    status: ManagedStatus,
+    v: &Valence,
+) -> anyhow::Result<()> {
+    crate::actor_guard::refuse_non_system_writer(v, "set_managed_group_status")?;
+    let group = get_group_raw(group_id, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
+    if group.managed_by().is_none() {
+        return Err(super::GaugeServiceError::validation(format!(
+            "Permission group {group_id} is not managed by another product"
+        ))
+        .into());
+    }
+    if group.managed_status().map(String::as_str) == Some(status.as_str()) {
+        return Ok(());
+    }
+    // Field-level history is appended by the PermissionHistoryWriter side effect.
+    group
+        .get_mutable(v, valence::use_!(r"When a **managing product archives or restores a managed permission group** in **Gauge**, we **save the group's managed status** so the group page can show it as archived or active. People who can view the group see that status."))
+        .set_managed_status(status.as_str().to_string())?
+        .set_updated_at(Utc::now())?
+        .commit()
+        .await?;
+    Ok(())
 }
 
 /// Update a group's name/description (owner or super-user only) and record history
@@ -594,6 +667,9 @@ async fn group_for_owner_edit(
 
 /// Add `user_id` as a member of `group_id` (owner or super-user only) and record history.
 ///
+/// Refused on a managed group (`managed_by` set) unless the caller is System; its members come
+/// from the product that manages it.
+///
 /// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
 /// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
 /// request that elevated midway.
@@ -613,6 +689,7 @@ pub async fn add_group_member_user(
     {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
+    super::membership::refuse_managed_member_edit(&group, v)?;
 
     let principal = ensure_user_principal(user_id, system).await?;
     let principal_id = require_model_id(principal.id(), "principal")?;
@@ -640,6 +717,9 @@ pub async fn add_group_member_user(
 
 /// Remove `user_id` as a member of `group_id` (owner or super-user only) and record history.
 ///
+/// Refused on a managed group (`managed_by` set) unless the caller is System; its members come
+/// from the product that manages it.
+///
 /// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
 /// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
 /// request that elevated midway.
@@ -659,6 +739,7 @@ pub async fn remove_group_member_user(
     {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
+    super::membership::refuse_managed_member_edit(&group, v)?;
 
     let principal = ensure_user_principal(user_id, system).await?;
     let principal_id = require_model_id(principal.id(), "principal")?;
@@ -687,6 +768,9 @@ pub async fn remove_group_member_user(
 /// Add `child_group_id` as a nested member group of `group_id` (owner or super-user
 /// only); fails if `group_id == child_group_id`. Records history.
 ///
+/// Refused on a managed group (`managed_by` set) unless the caller is System; its members come
+/// from the product that manages it.
+///
 /// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
 /// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
 /// request that elevated midway.
@@ -712,6 +796,7 @@ pub async fn add_group_member_group(
     {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
+    super::membership::refuse_managed_member_edit(&group, v)?;
     if group_id == child_group_id {
         return Err(
             super::GaugeServiceError::validation("Group cannot be a member of itself").into(),
@@ -745,6 +830,9 @@ pub async fn add_group_member_group(
 /// Remove `child_group_id` as a nested member group of `group_id` (owner or
 /// super-user only). Records history.
 ///
+/// Refused on a managed group (`managed_by` set) unless the caller is System; its members come
+/// from the product that manages it.
+///
 /// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
 /// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
 /// request that elevated midway.
@@ -770,6 +858,7 @@ pub async fn remove_group_member_group(
     {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
+    super::membership::refuse_managed_member_edit(&group, v)?;
 
     let principal = ensure_group_principal(child_group_id, system).await?;
     let principal_id = require_model_id(principal.id(), "principal")?;

@@ -280,6 +280,9 @@ pub fn record_pk_id(rid: Option<&valence::RecordId>) -> String {
 /// Upsert the Super User group and attach `member_user_id` as owner + member principal.
 pub async fn seed_super_user_group_with_member(system: &Valence, member_user_id: &str) {
     let super_group = gauge::generated::PermissionGroup::new(
+        None,
+        None,
+        None,
         SUPER_USER_GROUP_NAME.to_string(),
         Some("super users".to_string()),
         Utc::now(),
@@ -331,6 +334,9 @@ pub async fn seed_group_with_owner(
     .await;
 
     let group = gauge::generated::PermissionGroup::new(
+        None,
+        None,
+        None,
         format!("group-{group_id}"),
         Some("group for privacy tests".to_string()),
         Utc::now(),

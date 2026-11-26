@@ -33,6 +33,7 @@ pub async fn create_domain(
     let domain = PermissionDomain::new(
         false,
         None,
+        false,
         input.name,
         if input.description.trim().is_empty() {
             None

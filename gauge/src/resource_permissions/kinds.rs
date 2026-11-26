@@ -172,7 +172,8 @@ impl From<&Self> for ResourceKindDescriptor {
 /// [Who can act on a resource](crate#who-can-act-on-a-resource).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UmbrellaPolicy {
-    /// Grant View/Edit/Delete/Reveal to the kind's viewers / editors / operators groups.
+    /// Grant View/Run/Edit/Delete/Reveal/Unmask to the kind's viewers / editors /
+    /// operators groups.
     KindWide,
     /// No umbrella grants. The owners group still receives every action on the
     /// resource; additional access needs an explicit grant.
@@ -192,6 +193,11 @@ pub enum ResourceAction {
     Maintain,
     /// Reveal secret plaintext (Neutrino secrets only).
     Reveal,
+    /// Start, retry, or cancel work the resource describes (run a job now, enqueue a
+    /// task, replay a subscription).
+    Run,
+    /// See personal fields unmasked in rows and exports (Spectra tables and metrics).
+    Unmask,
 }
 
 impl ResourceAction {
@@ -216,6 +222,8 @@ impl ResourceAction {
             Self::Delete => "Delete",
             Self::Maintain => "Maintain",
             Self::Reveal => "Reveal",
+            Self::Run => "Run",
+            Self::Unmask => "Unmask",
         }
     }
 }

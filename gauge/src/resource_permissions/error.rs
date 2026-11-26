@@ -2,7 +2,11 @@
 
 use std::fmt;
 
-/// Errors from [`super::ensure_resource_permission_bundle`] and [`super::seed_resource_kind_catalog`].
+/// Errors from resource bundle setup and the role writes on a bundle.
+///
+/// Returned by [`super::ensure_resource_permission_bundle`], [`super::seed_resource_kind_catalog`],
+/// [`super::set_principal_role`], [`super::remove_principal`] and
+/// [`super::set_umbrella_removed`].
 #[derive(Debug)]
 pub enum ResourcePermissionError {
     /// Maintainer [`super::ActorId`] was missing or not a usable user id.
@@ -23,6 +27,13 @@ pub enum ResourcePermissionError {
     InvalidResourceId {
         /// Resource kind label.
         kind: String,
+    },
+    /// Removing or demoting this principal would leave the resource with no owner.
+    LastOwner {
+        /// Resource kind label.
+        kind: String,
+        /// Caller-supplied resource id.
+        resource_id: String,
     },
     /// Underlying Gauge / Valence service failure.
     GaugeService {
@@ -47,6 +58,10 @@ impl fmt::Display for ResourcePermissionError {
             Self::InvalidMaintainer { kind, resource_id } => write!(
                 f,
                 "resource permission maintainer must match the session user (kind={kind}, resource_id={resource_id})"
+            ),
+            Self::LastOwner { kind, resource_id } => write!(
+                f,
+                "a resource needs at least one owner (kind={kind}, resource_id={resource_id})"
             ),
             Self::InvalidResourceId { kind } => {
                 write!(f, "invalid resource_id for kind={kind}")
@@ -114,6 +129,13 @@ mod tests {
         };
         assert!(invalid.to_string().contains("invalid resource_id"));
         assert!(invalid.source().is_none());
+
+        let last_owner = ResourcePermissionError::LastOwner {
+            kind: "chronon_job".into(),
+            resource_id: "billing-rollup".into(),
+        };
+        assert!(last_owner.to_string().contains("at least one owner"));
+        assert!(last_owner.source().is_none());
 
         let service = ResourcePermissionError::service(
             "gluon_app",
