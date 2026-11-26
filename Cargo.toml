@@ -199,8 +199,3 @@ orbital-tree = { git = "https://github.com/unified-field-dev/orbital", branch = 
 orbital-scheduler = { git = "https://github.com/unified-field-dev/orbital", branch = "main" }
 orbital-motion = { git = "https://github.com/unified-field-dev/orbital", branch = "main" }
 orbital-history = { git = "https://github.com/unified-field-dev/orbital", branch = "main" }
-
-# Temporary: notification kinds (uf-notifications #13) are on the fork's main
-# but not on unified-field-dev yet. Drop this once they land there.
-[patch."https://github.com/unified-field-dev/uf-notifications"]
-uf-notifications-core = { git = "https://github.com/deathbreakfast/uf-notifications", branch = "main" }
