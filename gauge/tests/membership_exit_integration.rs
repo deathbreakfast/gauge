@@ -57,6 +57,7 @@ async fn seed_permission(system: &Valence, owners_group_id: &str, creator: &str)
         PermissionDomain::new(
             false,
             None,
+            false,
             "Exit Domain".to_string(),
             None,
             Utc::now(),
@@ -322,6 +323,43 @@ async fn leave_group_not_a_member_changes_nothing_sad() {
     assert!(
         !has_self_removal(&entries, "member_users", "mallory"),
         "no-op wrote history: {entries:?}"
+    );
+}
+
+#[tokio::test]
+async fn member_cannot_leave_managed_group_sad() {
+    let system = system().await;
+    seed_user("olive", "olive@example.test", &system).await;
+    seed_user("erin", "erin@example.test", &system).await;
+    service::create_managed_group(
+        "team_exit",
+        "Exit Team",
+        "",
+        Some("olive"),
+        Some("polaron"),
+        None,
+        &system,
+    )
+    .await
+    .expect("create managed group");
+    service::add_group_member_user("team_exit", "erin", &system)
+        .await
+        .expect("sync adds erin");
+
+    let err = service::leave_group("team_exit", &user(&system, "erin"))
+        .await
+        .expect_err("members of a managed group leave in the managing product");
+    assert!(
+        matches!(
+            err.downcast_ref::<service::GaugeServiceError>(),
+            Some(service::GaugeServiceError::Validation { .. })
+        ),
+        "expected Validation, got {err:#}"
+    );
+    let (_, members) = group_edges(&system, "team_exit").await;
+    assert!(
+        members.iter().any(|id| id == ERIN_PRINCIPAL),
+        "erin kept: {members:?}"
     );
 }
 

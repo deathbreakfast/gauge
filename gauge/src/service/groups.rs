@@ -774,18 +774,22 @@ pub async fn remove_group_member_user(
 /// without owner rights. Records history.
 ///
 /// Only the caller's own direct member edge is touched; leaving a group the caller isn't a
-/// direct member of changes nothing. Owners give up ownership with
-/// [`remove_group_owner_user`] on their own id.
+/// direct member of changes nothing. Refused on a managed group (`managed_by` set): its
+/// members come from the product that manages it, so the caller leaves there. Owners give up
+/// ownership with [`remove_group_owner_user`] on their own id.
 ///
 /// # Errors
 ///
-/// An actor without a user id (anonymous, service users, System), a missing group, or a
-/// failed history or edge write.
+/// An actor without a user id (anonymous, service users, System), a missing group, a managed
+/// group ([`GaugeServiceError::Validation`](super::GaugeServiceError)), or a failed history
+/// or edge write.
 pub async fn leave_group(group_id: &str, v: &Valence) -> anyhow::Result<()> {
     let actor_user_id = require_user_id(v)?;
     let group = get_group_raw(group_id, v)
         .await?
         .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
+    // A managed group's members come from its product's sync; leave there instead.
+    super::membership::refuse_managed_member_edit(&group, v)?;
     let Some(principal) = get_user_principal_raw(&user_principal_id(&actor_user_id), v).await?
     else {
         return Ok(());
