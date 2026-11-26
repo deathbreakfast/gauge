@@ -129,6 +129,11 @@ impl DatabaseBackend for TolerantMemBackend {
         self.inner.get_edge_targets(from, edge_table).await
     }
 
+    async fn get_edge_sources(&self, to: &RecordId, edge_table: &str) -> Result<Vec<RecordId>> {
+        self.check_reads()?;
+        self.inner.get_edge_sources(to, edge_table).await
+    }
+
     async fn define_unique_index(&self, table: &str, field: &str) -> Result<()> {
         match self.inner.define_unique_index(table, field).await {
             Ok(()) => Ok(()),

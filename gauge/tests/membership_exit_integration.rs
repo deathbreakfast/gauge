@@ -183,8 +183,7 @@ async fn erase_user_with_principal_and_edges_unblocked_happy() {
 
     // Apply the plan the way Lepton's erase does: physical deletes for cascaded rows (by
     // their stored id, which for a principal is `user:<id>`), plus Valence's per-node apply
-    // for SetNull and edge removal. Valence's own cascade step reloads the row through an id
-    // normalizer that strips `user:`, so it can't find a principal.
+    // for SetNull and edge removal.
     let nodes = format!("{:?}", dag.nodes);
     for node in &dag.nodes {
         if node.table == "user" {
