@@ -158,17 +158,27 @@ async fn erase_user_with_principal_and_edges_unblocked_happy() {
         .await
         .expect("grant erin directly");
 
+    // `erase_account` removes the account rows first; the user's DAG comes after.
+    for (table, id) in [("account_email", "email_erin"), ("account", "acct_erin")] {
+        let backend = system.backend_for_table(table).expect("account backend");
+        valence::delete_record(
+            backend.as_ref(),
+            table,
+            id,
+            valence::use_!(r"**Test:** Physically delete a fixture account row for `membership_exit_integration` the way account erase does before the user. CI and developers running the suite only."),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("delete {table}:{id}: {e}"));
+    }
+
     let dag = DeletionDag::compute("user", "erin", &system)
         .await
         .expect("compute user deletion DAG");
-    let blocking: Vec<_> = dag
-        .restrict_violations
-        .iter()
-        .filter(|r| r.blocking_table.starts_with("permission"))
-        .collect();
+    // Any Restrict violation empties the plan, so none may remain.
     assert!(
-        blocking.is_empty(),
-        "permission rows block erase: {blocking:?}"
+        dag.restrict_violations.is_empty(),
+        "rows block erase: {:?}",
+        dag.restrict_violations
     );
 
     // Apply the plan the way Lepton's erase does: physical deletes for cascaded rows (by
