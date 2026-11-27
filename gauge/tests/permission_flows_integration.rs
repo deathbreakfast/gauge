@@ -588,6 +588,7 @@ async fn user_erase_clears_creator_and_removes_user_principal() {
     .expect("create domain");
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "CanErase".to_string(),
             description: String::new(),
             owners_group_id: record_pk_id(group.id()),
