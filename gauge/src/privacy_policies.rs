@@ -129,6 +129,9 @@ const NEW_GROUP_HISTORY_WINDOW: chrono::Duration = chrono::Duration::seconds(30)
 /// A group's own `created` entry is also allowed when it is attributed to the actor, the
 /// group has no owner yet and was created within [`NEW_GROUP_HISTORY_WINDOW`].
 ///
+/// A self-removal row is also allowed: the actor dropping their own member, owner or
+/// direct-grant edge, written while that edge still exists (see `self_removal_row`).
+///
 /// `defer_to_edge` evaluates the source's Update policy, and a group's creation history is
 /// written inside `PermissionGroup::create`, before the creator's owner edge exists. The
 /// creator is therefore not yet an owner; the ownerless exception covers that one entry and
@@ -143,7 +146,7 @@ impl PolicyEvaluator for HistoryAppend {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some("Allow history create when the actor can update the source, or logs a new group's creation")
+        Some("Allow history create when the actor can update the source, logs a new group's creation, or logs the actor leaving")
     }
 
     async fn evaluate(
@@ -163,6 +166,9 @@ impl PolicyEvaluator for HistoryAppend {
         let Some((table, id)) = record.get("source").and_then(target_table_and_id) else {
             return Ok(false);
         };
+        if self_removal_row(record, &table, &id, &actor, v).await? {
+            return Ok(true);
+        }
         let source = serde_json::json!({ "id": format!("{table}:{id}") });
         match table.as_str() {
             "permission_group" => {
@@ -211,6 +217,62 @@ impl PolicyEvaluator for HistoryAppend {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+/// Edge table behind a self-removal history row, by its source table and `field_name`.
+fn self_removal_edge(table: &str, field: &str) -> Option<&'static str> {
+    match (table, field) {
+        ("permission_group", "member_users") => Some("permission_group_member_principal"),
+        ("permission_group", "owner_users") => Some("permission_group_owner_principal"),
+        ("permission", "granted_users") => Some("permission_allowed_principal"),
+        _ => None,
+    }
+}
+
+/// `true` when `record` logs the actor removing their own member, owner or direct-grant
+/// edge, and that edge still exists. Self-removal writes its history before the edge goes,
+/// so a caller can't log a removal for an edge they never held.
+async fn self_removal_row(
+    record: &serde_json::Value,
+    table: &str,
+    id: &str,
+    actor: &Actor,
+    v: &Valence,
+) -> valence::Result<bool> {
+    let field = record
+        .get("field_name")
+        .and_then(|f| f.as_str())
+        .unwrap_or_default();
+    let Some(edge) = self_removal_edge(table, field) else {
+        return Ok(false);
+    };
+    let candidates = actor_candidates(actor);
+    let removes_actor = record
+        .get("old_value")
+        .and_then(|o| o.as_str())
+        .is_some_and(|old| candidates.iter().any(|c| c == old));
+    let cleared = record
+        .get("new_value")
+        .and_then(|n| n.as_str())
+        .is_some_and(str::is_empty);
+    let by_actor = record
+        .get("actor")
+        .and_then(target_table_and_id)
+        .is_some_and(|(_, row_actor)| candidates.contains(&row_actor));
+    if !(removes_actor && cleared && by_actor) {
+        return Ok(false);
+    }
+    let backend = v
+        .backend_for_table(table)
+        .map_err(|e| Error::Privacy(format!("Policy backend lookup failed for {table}: {e}")))?;
+    let targets = backend
+        .get_edge_targets(&valence::RecordId::new(table, id), edge)
+        .await
+        .map_err(|e| Error::Privacy(format!("Policy edge lookup failed for {table}:{id}: {e}")))?;
+    Ok(candidates.iter().any(|c| {
+        let principal = valence::RecordId::new("permission_user_principal", format!("user:{c}"));
+        targets.contains(&principal)
+    }))
 }
 
 /// Allow permission-request **update** (decide) when the actor maintains the request target.

@@ -9,10 +9,11 @@ use crate::types::{
 use super::access::{can_edit_group, can_edit_permission, has_permission, permission_allows_user};
 use super::helpers::{
     current_user_id, ensure_group_principal, ensure_user_principal, get_domain_raw, get_group_raw,
-    get_permission_raw, get_user_by_actor_id, group_has_user, permissions_named,
-    persist_history_entry, principal_ref_from_record, record_pk_id, redact_user_principal_label,
-    require_actor_controls_owner_group, require_model_id, require_raw_record, require_user_id,
-    resolve_or_create_default_owner_group, user_id_candidates,
+    get_permission_raw, get_user_by_actor_id, get_user_principal_raw, group_has_user,
+    permissions_named, persist_history_entry, principal_ref_from_record, record_pk_id,
+    redact_user_principal_label, require_actor_controls_owner_group, require_model_id,
+    require_raw_record, require_user_id, resolve_or_create_default_owner_group, user_id_candidates,
+    user_principal_id,
 };
 
 /// Create a new permission under the given domain and owners group (or the actor's
@@ -366,6 +367,63 @@ pub async fn revoke_permission_from_user(
             old_value: serde_json::Value::String(user_id.to_string()),
             new_value: serde_json::Value::Null,
         }],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Drop the signed-in user's own direct grant of `permission_id`, so any holder can give up
+/// a permission without owner rights. Records history.
+///
+/// Only the caller's own allowed-principal edge is touched; grants that reach the caller
+/// through a group stay (leave the group with
+/// [`leave_group`](super::groups::leave_group)). Revoking a permission the caller doesn't
+/// hold directly changes nothing.
+///
+/// # Errors
+///
+/// An actor without a user id (anonymous, service users, System), a missing permission, or
+/// a failed history or edge write.
+pub async fn revoke_own_permission(permission_id: &str, v: &Valence) -> anyhow::Result<()> {
+    let actor_user_id = require_user_id(v)?;
+    let permission = get_permission_raw(permission_id, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("Permission", permission_id))?;
+    let Some(principal) = get_user_principal_raw(&user_principal_id(&actor_user_id), v).await?
+    else {
+        return Ok(());
+    };
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    let holds_directly = permission
+        .get_allowed_principals_record_ids(v, valence::use_!(r"When **Gauge** checks or shows **who holds a permission**, we **follow the allowed-principal edges** so the product can build the allow list or decide whether you already have access. Editors see that list; permission checks use it only to allow or deny."))
+        .await?
+        .iter()
+        .any(|p| p == &principal_id);
+    if !holds_directly {
+        return Ok(());
+    }
+    // History first: the append check accepts a self-removal row only while the caller's
+    // edge still exists.
+    persist_history_entry(
+        v,
+        "permission",
+        permission_id.to_string(),
+        "revoke_user",
+        Some(actor_user_id.clone()),
+        vec![HistoryDiffItemDto {
+            field: "granted_users".to_string(),
+            old_value: serde_json::Value::String(actor_user_id),
+            new_value: serde_json::Value::Null,
+        }],
+    )
+    .await?;
+    // The permission's Update policy can't see which edge is removed, so it only admits
+    // owners. The caller's own edge was checked above; remove it as the caller (no System).
+    v.unrelate_edge(
+        "permission_allowed_principal",
+        &RecordId::new("permission", permission_id),
+        &principal_id,
+        valence::use_!(r"When a holder **gives up a permission** in **Gauge**, we **delete their own allowed-principal edge** so they no longer hold the grant. Owners see the updated allow list on the permission detail."),
     )
     .await?;
     Ok(())

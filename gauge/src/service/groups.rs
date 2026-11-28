@@ -7,9 +7,10 @@ use crate::types::{HistoryDiffItemDto, ManagedStatus, PermissionGroupCreateInput
 
 use super::helpers::{
     canonical_user_id, ensure_group_principal, ensure_user_principal, get_group_principal_raw,
-    get_group_raw, get_user_by_actor_id, group_has_member_principal, group_has_owner_principal,
-    group_has_owner_user, group_principal_id, groups_named, persist_history_entry, record_pk_id,
-    relate_first_owner, require_model_id, require_user_id, require_writer_id, user_id_candidates,
+    get_group_raw, get_user_by_actor_id, get_user_principal_raw, group_has_member_principal,
+    group_has_owner_principal, group_has_owner_user, group_principal_id, groups_named,
+    persist_history_entry, record_pk_id, relate_first_owner, require_model_id, require_user_id,
+    require_writer_id, user_id_candidates, user_principal_id,
 };
 
 /// Which edges the creator gets on a group they create.
@@ -480,6 +481,8 @@ pub async fn add_group_owner_user(
 /// Remove `user_id` as an owner of `group_id` (owner or super-user only); fails if
 /// it would remove the group's last owner. Records history.
 ///
+/// An owner may pass their own id to give up ownership while another owner remains.
+///
 /// [`valence::Actor::System`] is allowed and counts as a super user (history records the actor
 /// as `system`). Use it only from a job that starts as System (boot, Chronon), never from a
 /// request that elevated midway.
@@ -521,9 +524,8 @@ pub async fn remove_group_owner_user(
         .into());
     }
 
-    group
-        .unrelate_from_owner_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **removes a group owner** in **Gauge**, we **delete the owner edge** so that principal no longer counts as an owner for approvals and edits. Operators see the updated owners on the group detail."))
-        .await?;
+    // History first: an owner removing themselves no longer passes the history append
+    // check once their owner edge is gone.
     persist_history_entry(
         v,
         "permission_group",
@@ -537,6 +539,9 @@ pub async fn remove_group_owner_user(
         }],
     )
     .await?;
+    group
+        .unrelate_from_owner_record(&require_model_id(principal.id(), "principal")?, system, valence::use_!(r"When an operator **removes a group owner** in **Gauge**, we **delete the owner edge** so that principal no longer counts as an owner for approvals and edits. Operators see the updated owners on the group detail."))
+        .await?;
     Ok(())
 }
 
@@ -760,6 +765,61 @@ pub async fn remove_group_member_user(
             old_value: serde_json::Value::String(user_id.to_string()),
             new_value: serde_json::Value::Null,
         }],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Remove the signed-in user from `group_id`'s members, so any member can leave a group
+/// without owner rights. Records history.
+///
+/// Only the caller's own direct member edge is touched; leaving a group the caller isn't a
+/// direct member of changes nothing. Refused on a managed group (`managed_by` set): its
+/// members come from the product that manages it, so the caller leaves there. Owners give up
+/// ownership with [`remove_group_owner_user`] on their own id.
+///
+/// # Errors
+///
+/// An actor without a user id (anonymous, service users, System), a missing group, a managed
+/// group ([`GaugeServiceError::Validation`](super::GaugeServiceError)), or a failed history
+/// or edge write.
+pub async fn leave_group(group_id: &str, v: &Valence) -> anyhow::Result<()> {
+    let actor_user_id = require_user_id(v)?;
+    let group = get_group_raw(group_id, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
+    // A managed group's members come from its product's sync; leave there instead.
+    super::membership::refuse_managed_member_edit(&group, v)?;
+    let Some(principal) = get_user_principal_raw(&user_principal_id(&actor_user_id), v).await?
+    else {
+        return Ok(());
+    };
+    let principal_id = require_model_id(principal.id(), "principal")?;
+    if !group_has_member_principal(&group, &principal_id, v).await? {
+        return Ok(());
+    }
+    // History first: the append check accepts a self-removal row only while the caller's
+    // edge still exists.
+    persist_history_entry(
+        v,
+        "permission_group",
+        group_id.to_string(),
+        "remove_member_user",
+        Some(actor_user_id.clone()),
+        vec![HistoryDiffItemDto {
+            field: "member_users".to_string(),
+            old_value: serde_json::Value::String(actor_user_id),
+            new_value: serde_json::Value::Null,
+        }],
+    )
+    .await?;
+    // The group's Update policy can't see which edge is removed, so it only admits owners.
+    // The caller's own edge was checked above; remove it as the caller (no System).
+    v.unrelate_edge(
+        "permission_group_member_principal",
+        &RecordId::new("permission_group", group_id),
+        &principal_id,
+        valence::use_!(r"When a member **leaves a permission group** in **Gauge**, we **delete their own member edge** so they no longer inherit through this group. Owners see the updated members on the group detail."),
     )
     .await?;
     Ok(())

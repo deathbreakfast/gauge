@@ -58,7 +58,7 @@ pub use error::GaugeServiceError;
 pub use group_membership_bulk::clear_group_members;
 pub use groups::{
     add_group_member_group, add_group_member_user, add_group_owner_group, add_group_owner_user,
-    create_group, create_group_owner_only, create_managed_group, delete_group,
+    create_group, create_group_owner_only, create_managed_group, delete_group, leave_group,
     remove_group_member_group, remove_group_member_user, remove_group_owner_group,
     remove_group_owner_user, set_managed_group_status, update_group,
 };
@@ -67,7 +67,7 @@ pub use holders::list_permission_holders;
 pub use permissions::{
     create_permission, delete_permission, get_group_detail, get_permission_detail,
     grant_permission_to_group, grant_permission_to_service_user_checked, grant_permission_to_user,
-    list_groups, list_permissions, revoke_permission_from_group,
+    list_groups, list_permissions, revoke_own_permission, revoke_permission_from_group,
     revoke_permission_from_service_user, revoke_permission_from_user, update_permission,
 };
 pub use requests::{

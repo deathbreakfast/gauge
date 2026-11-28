@@ -171,6 +171,7 @@ async fn service_writes(
         "remove_group_member_user",
         svc::remove_group_member_user("service_user_creators", "alice", v)
     );
+    attempt!("leave_group", svc::leave_group(READERS, v));
     attempt!(
         "add_group_member_group",
         svc::add_group_member_group(READERS, "service_user_creators", v)
@@ -237,6 +238,10 @@ async fn permission_writes(v: &Valence, read_id: &str) -> Vec<&'static str> {
     attempt!(
         "grant_permission_to_user",
         svc::grant_permission_to_user(read_id, "bob", v)
+    );
+    attempt!(
+        "revoke_own_permission",
+        svc::revoke_own_permission(read_id, v)
     );
     attempt!(
         "revoke_permission_from_group",
