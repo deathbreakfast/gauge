@@ -272,6 +272,7 @@ async fn ensure_coarse_create_permission(
         Some(RecordId::new("user", "system")),
         RecordId::new("permission_group", spec.owners_group_id),
         RecordId::new("permission_domain", spec.domain_id),
+        None,
         spec.permission_name.to_string(),
         Some(spec.permission_description.to_string()),
         now,

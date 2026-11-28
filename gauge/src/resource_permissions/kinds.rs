@@ -198,19 +198,23 @@ pub enum ResourceAction {
     Run,
     /// See personal fields unmasked in rows and exports (Spectra tables and metrics).
     Unmask,
+    /// Read the resource's activity: who used it and how.
+    Audit,
 }
 
 impl ResourceAction {
     /// View / Edit / Delete / Maintain — the action set most kinds want.
     pub const STANDARD: &'static [Self] = &[Self::View, Self::Edit, Self::Delete, Self::Maintain];
 
-    /// [`ResourceAction::STANDARD`] plus Reveal, for kinds holding secret material.
+    /// [`ResourceAction::STANDARD`] plus Reveal and Audit, for kinds holding secret material.
+    /// Audit lets an owner give one person a secret's activity without the secret itself.
     pub const WITH_REVEAL: &'static [Self] = &[
         Self::View,
         Self::Reveal,
         Self::Edit,
         Self::Delete,
         Self::Maintain,
+        Self::Audit,
     ];
 
     /// Suffix used in permission names.
@@ -224,6 +228,7 @@ impl ResourceAction {
             Self::Reveal => "Reveal",
             Self::Run => "Run",
             Self::Unmask => "Unmask",
+            Self::Audit => "Audit",
         }
     }
 }

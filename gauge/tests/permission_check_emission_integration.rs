@@ -56,6 +56,7 @@ async fn actor_can_records_allow_and_deny_outcomes_happy_path() {
     let domain_id = record_pk_id(domain.id());
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "EmissionPerm".to_string(),
             description: String::new(),
             owners_group_id: group_id,

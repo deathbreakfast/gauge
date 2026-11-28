@@ -26,14 +26,17 @@
 pub(crate) mod access;
 mod gate;
 mod policy;
-mod reads;
+pub(crate) mod reads;
 mod seed;
 
 use lepton_identity::service_users::{ServiceUserId, SERVICE_USER_PREFIX};
 
 pub use gate::{install_gauge_service_user_gate, GaugeServiceUserGate};
 pub use policy::{ServiceUserPrincipalManager, SERVICE_USER_PRINCIPAL_MANAGER};
-pub use reads::{service_user_effective_permissions, service_user_groups};
+pub use reads::{
+    __test_reach_read_count, __test_reset_reach_read_count, service_user_effective_permissions,
+    service_user_groups,
+};
 pub use seed::{seed_service_user_permissions, ServiceUserSeedStats};
 
 /// Permission that lets a user create service users they own.

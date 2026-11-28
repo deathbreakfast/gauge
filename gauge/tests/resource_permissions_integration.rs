@@ -1420,6 +1420,7 @@ async fn app_admin_group_grants_permission_and_super_users_inherit_but_admins_do
         Some(valence::RecordId::new("user", "system")),
         valence::RecordId::new("permission_group", SUPER_USER_GROUP_ID),
         valence::RecordId::new("permission_domain", "lepton_test_domain"),
+        None,
         "LeptonManageDelivery".into(),
         Some("Manage sign-in and delivery".into()),
         now,

@@ -432,6 +432,7 @@
 //!
 //! let permission = create_permission(
 //!     PermissionCreateInput {
+//!         display_name: String::new(),
 //!         name: "CreateGluonApplications".into(),
 //!         description: "Create Gluon applications".into(),
 //!         owners_group_id: /* group id */ String::new(),
@@ -722,7 +723,11 @@
 //!
 //! Privilege-shaped mutations are the domain service calls that change who can
 //! act: grant/revoke allow-lists, group membership and ownership, nested group
-//! edges, permission update/delete, group delete, and request decide. Hosts that
+//! edges, permission update/delete, group delete, and request decide or deny
+//! (`decide_permission_request`, `deny_request`). Group owners may add and remove
+//! their own group's members (`add_group_member_*`, `remove_group_member_*`) as
+//! well as Gauge admins, and allow-list removal (`revoke_permission_from_*`) is
+//! privilege-shaped like a grant: both go through step-up. Hosts that
 //! expose these through Leptos server functions require a recent TOTP sudo
 //! window (macro `step_up`) before the call proceeds. Membership and ownership
 //! changes on the well-known Super User group additionally need a fresh TOTP on
@@ -765,6 +770,29 @@
 //! root `SECURITY.md` and gauge-app `server` attributes. Next:
 //! [Grant and revoke](#grant-and-revoke-allow-lists) or
 //! [Super User bootstrap](#super-user-bootstrap).
+//!
+//! ## Who has access, and why
+//!
+//! The reads behind Gauge's permission, group, people and activity pages name
+//! everything for people, never by id:
+//!
+//! - [`service::list_effective_holders`]: every principal that passes a
+//!   permission's check, with each [`types::AccessPath`] (direct, through groups
+//!   outermost first, or Super User). [`service::list_group_access`]: what a
+//!   group's members get. Both for the record's owners and Gauge admins.
+//! - [`service::list_people`] (Gauge admins) and [`service::principal_access`]
+//!   (Gauge admins, or yourself through [`service::principal_access_self`]).
+//! - [`service::list_activity`] (Gauge admins): the change log in words.
+//!   [`service::list_resource_activity`]: one resource bundle's access changes,
+//!   for holders of its `Maintain` or `Audit` action.
+//! - Requests carry `requester_label`, `target_label` and the decision
+//!   (`decided_by_label`, `decided_at`, `deny_reason`);
+//!   [`service::deny_request`] needs a reason and [`service::withdraw_request`]
+//!   is the requester's own.
+//!
+//! These walk the grant graph from the edges that touch the record, so their
+//! cost follows what the record holds, not how many groups exist. Every read runs
+//! under the caller's Valence.
 //!
 //! ## Feature flags
 //!

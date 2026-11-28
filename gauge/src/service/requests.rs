@@ -25,6 +25,7 @@ use super::groups::add_group_member_user;
 use super::helpers::{
     get_group_raw, get_permission_raw, get_request_raw, get_user_by_actor_id, group_has_user,
     map_request_status, record_pk_id, require_model_id, require_user_id, user_id_candidates,
+    user_label,
 };
 use super::permissions::{grant_permission_to_service_user_approved, grant_permission_to_user};
 use super::service_user_members::{
@@ -51,12 +52,15 @@ pub async fn request_row_from_model(
         .ok_or_else(|| anyhow::anyhow!("Unsupported request target type"))?;
 
     let target_label = match target_kind {
-        PermissionRequestTargetKind::Permission => get_permission_raw(&target_id, system)
-            .await?
-            .map_or_else(|| format!("Permission {target_id}"), |p| p.name().clone()),
+        PermissionRequestTargetKind::Permission => {
+            get_permission_raw(&target_id, system).await?.map_or_else(
+                || "A deleted permission".to_string(),
+                |p| super::permissions::permission_display_name(&p),
+            )
+        }
         PermissionRequestTargetKind::Group => get_group_raw(&target_id, system)
             .await?
-            .map_or_else(|| format!("Group {target_id}"), |g| g.name().clone()),
+            .map_or_else(|| "A deleted group".to_string(), |g| g.name().clone()),
     };
 
     let approver_user_id = request
@@ -69,19 +73,31 @@ pub async fn request_row_from_model(
         Some(principal) => on_behalf_of_ref(principal, v).await?,
         None => None,
     };
+    let requestor_user_id =
+        valence::extract_id_from_record(request.requestor()).unwrap_or_default();
+    let requester_label = user_label(&requestor_user_id, v).await;
+    let decided_by_label = match &approver_user_id {
+        Some(id) => Some(user_label(id, v).await),
+        None => None,
+    };
 
     Ok(PermissionRequestRowDto {
         id: record_pk_id(request.id()),
         target_kind,
         target_id,
         target_label,
-        requestor_user_id: valence::extract_id_from_record(request.requestor()).unwrap_or_default(),
+        requestor_user_id,
+        decided_by: approver_user_id.clone(),
         approver_user_id,
         reason: request.reason().clone(),
         status: map_request_status(request.status()),
         created_at: request.created_at().to_rfc3339(),
         updated_at: request.updated_at().to_rfc3339(),
         can_review,
+        requester_label,
+        decided_by_label,
+        decided_at: request.decided_at().copied(),
+        deny_reason: request.deny_reason().cloned(),
         on_behalf_of,
     })
 }
@@ -308,6 +324,8 @@ pub async fn create_permission_request(
         now,
         now,
         on_behalf_of_record,
+        None,
+        None,
     )?;
     let created = PermissionRequest::create(request, system, valence::use_!(r"When **Gauge permissions** needs to persist work, we **save Permission Request** so the next step in that feature can continue with the latest values. People and services allowed for **Gauge permissions** use this data for that workflow—not as a general export of unrelated personal fields.")).await?;
     request_row_from_model(&created, v).await
@@ -442,6 +460,12 @@ pub async fn decide_permission_request(
     input: PermissionRequestDecisionInput,
     v: &Valence,
 ) -> anyhow::Result<PermissionRequestRowDto> {
+    if input.decision == PermissionRequestDecision::Deny {
+        return Err(super::GaugeServiceError::validation(
+            "Give a reason when denying a request (use deny_request)",
+        )
+        .into());
+    }
     let actor_user_id = require_user_id(v)?;
     let system = v;
     let request = get_request_raw(&input.request_id, system)
@@ -485,11 +509,13 @@ pub async fn decide_permission_request(
     };
 
     let write = v;
+    let now = Utc::now();
     request
         .get_mutable(write, valence::use_!(r"In **Gauge permissions**, we **update this data** so later steps see the latest values for this workflow. Callers allowed for **Gauge permissions** use the updated data; this is not a public export of unrelated fields."))
         .set_approver(require_model_id(approver.id(), "approver")?)?
         .set_status(new_status)?
-        .set_updated_at(Utc::now())?
+        .set_decided_at(now)?
+        .set_updated_at(now)?
         .commit()
         .await?;
 
@@ -516,6 +542,109 @@ pub async fn decide_permission_request(
     }
 
     let updated = get_request_raw(&input.request_id, system)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Permission request not found after update"))?;
+    request_row_from_model(&updated, v).await
+}
+
+/// Deny a pending access request, with the reason the requester will see.
+///
+/// The reason is required: it is stored on the request, shown to the requester on the request
+/// page and sent in their notification. Who may deny is who may approve: the target's
+/// maintainers and super users.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError): `Validation` for an empty or too long
+/// reason, or a request that isn't pending; `NotFound` for an unknown id; `NotAuthorized` for
+/// anyone who can't review it. Valence failures otherwise.
+pub async fn deny_request(
+    id: &str,
+    reason: &str,
+    v: &Valence,
+) -> anyhow::Result<PermissionRequestRowDto> {
+    let actor_user_id = require_user_id(v)?;
+    let reason = reason.trim();
+    if reason.is_empty() {
+        return Err(super::GaugeServiceError::validation("Give a reason for denying").into());
+    }
+    if reason.chars().count() > MAX_REQUEST_REASON_CHARS {
+        return Err(super::GaugeServiceError::validation(format!(
+            "Reason is too long (max {MAX_REQUEST_REASON_CHARS} characters)"
+        ))
+        .into());
+    }
+    let request = get_request_raw(id, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("Permission request", id))?;
+    if !actor_can_review_target(request.target(), v).await? && !actor_is_super_user(v).await? {
+        return Err(super::GaugeServiceError::not_authorized("review this request").into());
+    }
+    if !matches!(request.status(), PermissionRequestStatus::Pending) {
+        return Err(
+            super::GaugeServiceError::validation("Only pending requests can be reviewed").into(),
+        );
+    }
+    let approver = get_user_by_actor_id(&actor_user_id, v)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Actor user not found: {actor_user_id}"))?;
+    let now = Utc::now();
+    request
+        .get_mutable(v, valence::use_!(r"When a reviewer **denies an access request** in **Gauge**, we **save the decision, who made it, when, and their reason** so the requester sees why on the request page and in their notification."))
+        .set_approver(require_model_id(approver.id(), "approver")?)?
+        .set_status(PermissionRequestStatus::Denied)?
+        .set_deny_reason(reason.to_string())?
+        .set_decided_at(now)?
+        .set_updated_at(now)?
+        .commit()
+        .await?;
+    let updated = get_request_raw(id, v)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Permission request not found after update"))?;
+    request_row_from_model(&updated, v).await
+}
+
+/// Withdraw your own pending access request.
+///
+/// Only the requester may withdraw, and only while the request is pending. The request keeps
+/// its row (status `Withdrawn`, with the requester as `decided_by`), so it stays in their list
+/// and in the change log.
+///
+/// # Errors
+///
+/// [`GaugeServiceError`](super::GaugeServiceError): `NotFound` for an unknown id;
+/// `NotAuthorized` for anyone but the requester; `Validation` for a request that isn't pending.
+/// Valence failures otherwise.
+pub async fn withdraw_request(id: &str, v: &Valence) -> anyhow::Result<PermissionRequestRowDto> {
+    let actor_user_id = require_user_id(v)?;
+    let request = get_request_raw(id, v)
+        .await?
+        .ok_or_else(|| super::GaugeServiceError::not_found("Permission request", id))?;
+    let requestor_user_id =
+        valence::extract_id_from_record(request.requestor()).unwrap_or_default();
+    if !user_id_candidates(&actor_user_id)
+        .iter()
+        .any(|candidate| candidate == &requestor_user_id)
+    {
+        return Err(
+            super::GaugeServiceError::not_authorized("withdraw someone else's request").into(),
+        );
+    }
+    if !matches!(request.status(), PermissionRequestStatus::Pending) {
+        return Err(
+            super::GaugeServiceError::validation("Only pending requests can be withdrawn").into(),
+        );
+    }
+    let now = Utc::now();
+    request
+        .get_mutable(v, valence::use_!(r"When a requester **withdraws their own access request** in **Gauge**, we **mark it withdrawn and record when** so reviewers stop seeing it and the requester's list shows it as withdrawn."))
+        .set_approver(request.requestor().clone())?
+        .set_status(PermissionRequestStatus::Withdrawn)?
+        .set_decided_at(now)?
+        .set_updated_at(now)?
+        .commit()
+        .await?;
+    let updated = get_request_raw(id, v)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Permission request not found after update"))?;
     request_row_from_model(&updated, v).await
@@ -550,7 +679,7 @@ pub async fn list_history(
     }
     #[allow(clippy::cast_possible_truncation)] // MAX_HISTORY_LIST_ROWS is 500
     let rows = query.limit(MAX_HISTORY_LIST_ROWS as u32).await?;
-    let is_super = actor_is_super_user(v).await?;
+    let is_super = super::access::actor_is_gauge_admin(v).await?;
     let mut out = Vec::with_capacity(rows.len().min(MAX_HISTORY_LIST_ROWS));
     for row in rows {
         let source = row.source();
@@ -612,7 +741,7 @@ pub async fn list_history(
 /// `true` when the actor may view history for `subject_kind`/`subject_id`.
 ///
 /// Matches edit authorization: permission owners (via owners group) or group
-/// owners, plus super users. Used by timeline fetches so AUTHENTICATED parent
+/// owners, plus super users and Gauge admins. Used by timeline fetches so AUTHENTICATED parent
 /// Read does not widen history beyond can-edit.
 pub async fn actor_can_view_history_subject(
     subject_kind: &str,
@@ -620,6 +749,9 @@ pub async fn actor_can_view_history_subject(
     v: &Valence,
 ) -> anyhow::Result<bool> {
     let system = v;
+    if super::access::actor_is_gauge_admin(v).await? {
+        return Ok(true);
+    }
     match subject_kind {
         "permission" => {
             let Some(permission) = get_permission_raw(subject_id, system).await? else {

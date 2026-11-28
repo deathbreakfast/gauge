@@ -83,6 +83,7 @@ async fn migration_script_backfills_principal_edges_idempotently() -> anyhow::Re
 
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "Legacy Granted".to_string(),
             description: "legacy permission edge source".to_string(),
             owners_group_id: group_id.clone(),
@@ -207,6 +208,7 @@ async fn migration_fails_when_legacy_user_edge_targets_missing_user_sad() -> any
     let domain_id = record_pk_id(domain.id());
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "Ghost Perm".to_string(),
             description: "migration sad".to_string(),
             owners_group_id: group_id,
@@ -339,6 +341,7 @@ async fn super_user_review_queue_hidden_but_direct_approval_allowed() -> anyhow:
 
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "Review Visibility".to_string(),
             description: "target permission".to_string(),
             owners_group_id,

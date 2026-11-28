@@ -14,6 +14,7 @@ valence_trait_schema! {
                 indexed: true,
                 validations: [Validator::MinLength(1), Validator::MaxLength(200)],
             },
+            // Markdown text for permissions, groups and domains; pages render it.
             description: {
                 r#type: FieldType::String,
                 required: false,

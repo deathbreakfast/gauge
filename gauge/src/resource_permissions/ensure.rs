@@ -158,6 +158,7 @@ async fn ensure_permission_row(
         Some(RecordId::new("user", creator_user_id)),
         RecordId::new("permission_group", owners_group_id),
         domain_rid.clone(),
+        None,
         name.clone(),
         Some(format!(
             "{action} on {display} ({resource})",
@@ -204,7 +205,8 @@ pub(super) fn umbrella_grants(
         ResourceAction::Delete | ResourceAction::Reveal | ResourceAction::Unmask => {
             vec![g.operators]
         }
-        ResourceAction::Maintain => Vec::new(), // owners group only
+        // Owners group only: who may change access, and who may read the activity.
+        ResourceAction::Maintain | ResourceAction::Audit => Vec::new(),
     }
 }
 

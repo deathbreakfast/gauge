@@ -89,6 +89,7 @@ jobs:
           --test permission_service_user_direct_grant_integration
           --test request_on_behalf_of_service_user
           --test membership_exit_integration
+          --test usability_api_integration
       - name: cargo check + run (embedded-gauge-host)
         run: |
           cargo check -p embedded-gauge-host

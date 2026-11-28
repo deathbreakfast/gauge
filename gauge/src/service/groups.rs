@@ -2,6 +2,7 @@ use chrono::Utc;
 use valence::{Model, RecordId, Valence};
 
 use crate::generated::PermissionGroup;
+use crate::side_effects::permission_request_notifier::{notify_access_change, AccessChange};
 use crate::super_user::{actor_is_super_user, SUPER_USER_GROUP_ID, SUPER_USER_GROUP_NAME};
 use crate::types::{HistoryDiffItemDto, ManagedStatus, PermissionGroupCreateInput};
 
@@ -689,9 +690,7 @@ pub async fn add_group_member_user(
     let group = get_group_raw(group_id, system)
         .await?
         .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
-    if !group_has_owner_user(&group, &actor_candidates, system).await?
-        && !actor_is_super_user(v).await?
-    {
+    if !may_edit_members(&group, &actor_candidates, v).await? {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
     super::membership::refuse_managed_member_edit(&group, v)?;
@@ -717,6 +716,7 @@ pub async fn add_group_member_user(
         }],
     )
     .await?;
+    notify_access_change(v, AccessChange::user_added(&group, user_id)).await;
     Ok(())
 }
 
@@ -739,9 +739,7 @@ pub async fn remove_group_member_user(
     let group = get_group_raw(group_id, system)
         .await?
         .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
-    if !group_has_owner_user(&group, &actor_candidates, system).await?
-        && !actor_is_super_user(v).await?
-    {
+    if !may_edit_members(&group, &actor_candidates, v).await? {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
     super::membership::refuse_managed_member_edit(&group, v)?;
@@ -767,6 +765,7 @@ pub async fn remove_group_member_user(
         }],
     )
     .await?;
+    notify_access_change(v, AccessChange::user_removed(&group, user_id)).await;
     Ok(())
 }
 
@@ -851,9 +850,7 @@ pub async fn add_group_member_group(
     let group = get_group_raw(group_id, system)
         .await?
         .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
-    if !group_has_owner_user(&group, &actor_candidates, system).await?
-        && !actor_is_super_user(v).await?
-    {
+    if !may_edit_members(&group, &actor_candidates, v).await? {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
     super::membership::refuse_managed_member_edit(&group, v)?;
@@ -913,9 +910,7 @@ pub async fn remove_group_member_group(
     let group = get_group_raw(group_id, system)
         .await?
         .ok_or_else(|| super::GaugeServiceError::not_found("permission_group", group_id))?;
-    if !group_has_owner_user(&group, &actor_candidates, system).await?
-        && !actor_is_super_user(v).await?
-    {
+    if !may_edit_members(&group, &actor_candidates, v).await? {
         return Err(super::GaugeServiceError::not_authorized("edit group membership").into());
     }
     super::membership::refuse_managed_member_edit(&group, v)?;
@@ -942,4 +937,17 @@ pub async fn remove_group_member_group(
     )
     .await?;
     Ok(())
+}
+
+/// Who may add and remove a group's members: the group's owners (direct or through an owner
+/// group), Gauge admins and super users. System counts as a super user. Product servers put
+/// these calls behind step-up (a fresh code on the Super User group).
+async fn may_edit_members(
+    group: &crate::generated::PermissionGroup,
+    actor_candidates: &[String],
+    v: &Valence,
+) -> anyhow::Result<bool> {
+    Ok(group_has_owner_user(group, actor_candidates, v).await?
+        || actor_is_super_user(v).await?
+        || super::access::actor_is_gauge_admin(v).await?)
 }

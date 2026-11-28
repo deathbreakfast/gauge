@@ -8,7 +8,7 @@ valence_schema! {
     Permission {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission",
-        version: "0.1.2",
+        version: "0.1.3",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Permission object defining allow-list principals and owners group",
 
@@ -52,6 +52,12 @@ valence_schema! {
             domain: {
                 r#type: FieldType::Record("permission_domain"),
                 required: true,
+            },
+            // The name people read. `name` (the trait field) stays the key code checks and
+            // never changes after create; rows written before this field read as their key.
+            display_name: {
+                r#type: FieldType::String,
+                required: false,
             },
         ],
 

@@ -74,6 +74,7 @@ async fn seed_permission(system: &Valence, owners_group_id: &str, creator: &str)
         Some(RecordId::new("user", creator)),
         RecordId::new("permission_group", owners_group_id),
         domain.id().expect("domain id").clone(),
+        None,
         "ExitPermission".to_string(),
         None,
         now,

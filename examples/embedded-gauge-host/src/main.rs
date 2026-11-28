@@ -228,7 +228,7 @@ async fn seed_demo_permission(
         Permission::new(
             Some(RecordId::new("user", "owner-1")),
             RecordId::new("permission_group", "deployers"),
-            domain.id().expect("domain id").clone(),
+            domain.id().expect("domain id").clone(), None,
             permission_name.clone(),
             Some("Allow deployments".into()),
             now,

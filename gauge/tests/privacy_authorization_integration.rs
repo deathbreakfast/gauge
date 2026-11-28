@@ -75,6 +75,7 @@ async fn non_owner_cannot_edit_permission() {
 
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "AuthPerm".to_string(),
             description: "auth".to_string(),
             owners_group_id: owner_group_id.clone(),
@@ -460,6 +461,7 @@ async fn clear_members_removes_inherited_grants_only_for_that_group() {
     .unwrap();
     let permission = service::create_permission(
         PermissionCreateInput {
+            display_name: String::new(),
             name: "ClearProbe".to_string(),
             description: String::new(),
             owners_group_id: team.clone(),

@@ -3,20 +3,19 @@
 //! Both views follow the same rules as the permission check itself
 //! ([`crate::service_users::access`]): group membership counts directly, through nested groups
 //! and through owning groups, a direct grant counts for permissions, and a suspended or deleted
-//! service user holds nothing. Each entry is the same DTO [`get_group_detail`](super::get_group_detail)
+//! service user holds nothing. Both walk edges backwards from the service user's principal, so
+//! their cost follows what it holds, not the size of the tables. Each entry is the same DTO [`get_group_detail`](super::get_group_detail)
 //! or [`get_permission_detail`](super::get_permission_detail) returns, so owners, members and
 //! allow-lists stay hidden from callers who couldn't see them there.
 
 use lepton_identity::service_users::ServiceUserId;
 use valence::{Model, Valence};
 
-use crate::generated::{Permission, PermissionGroup};
-use crate::service_users::access::{
-    service_user_decision, service_user_in_group, service_user_is_active,
-};
+use crate::service_users::access::service_user_is_active;
+use crate::service_users::reads::{principal_reach, service_user_principal_record};
 use crate::types::{PermissionDetailDto, PermissionGroupDetailDto};
 
-use super::helpers::{raw_table_rows, record_pk_id, require_user_id};
+use super::helpers::{record_pk_id, require_user_id};
 use super::permissions::{get_group_detail, get_permission_detail};
 use super::GaugeServiceError;
 
@@ -57,14 +56,10 @@ pub async fn list_service_user_groups(
     if !service_user_is_active(v, service_user).await? {
         return Ok(Vec::new());
     }
+    let reach = principal_reach(&service_user_principal_record(service_user), false, v).await?;
     let mut out = Vec::new();
-    for row in raw_table_rows("permission_group", v).await? {
-        let group: PermissionGroup = serde_json::from_value(row)?;
-        let group_id = record_pk_id(group.id());
-        if !service_user_in_group(v, &group_id, service_user).await? {
-            continue;
-        }
-        if let Some(detail) = get_group_detail(&group_id, v).await? {
+    for group in &reach.groups {
+        if let Some(detail) = get_group_detail(&group.id, v).await? {
             out.push(detail);
         }
     }
@@ -91,16 +86,15 @@ pub async fn list_service_user_permissions(
     if !service_user_is_active(v, service_user).await? {
         return Ok(Vec::new());
     }
+    let reach = principal_reach(&service_user_principal_record(service_user), false, v).await?;
+    let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for row in raw_table_rows("permission", v).await? {
-        let permission: Permission = serde_json::from_value(row)?;
-        if !service_user_decision(v, service_user, permission.name())
-            .await?
-            .allowed()
-        {
+    for (permission, _) in &reach.permissions {
+        let id = record_pk_id(permission.id());
+        if !seen.insert(id.clone()) {
             continue;
         }
-        if let Some(detail) = get_permission_detail(&record_pk_id(permission.id()), v).await? {
+        if let Some(detail) = get_permission_detail(&id, v).await? {
             out.push(detail);
         }
     }

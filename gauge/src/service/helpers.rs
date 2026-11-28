@@ -464,6 +464,37 @@ pub const fn map_request_status(status: &PermissionRequestStatus) -> PermissionR
         PermissionRequestStatus::Pending => PermissionRequestStatusDto::Pending,
         PermissionRequestStatus::Approved => PermissionRequestStatusDto::Approved,
         PermissionRequestStatus::Denied => PermissionRequestStatusDto::Denied,
+        PermissionRequestStatus::Withdrawn => PermissionRequestStatusDto::Withdrawn,
+    }
+}
+
+/// A permission key from a display name: each run of letters and digits becomes one word with
+/// its first letter upper-cased, everything else is dropped. "Approve payroll runs" gives
+/// `ApprovePayrollRuns`; "see 2fa codes" gives `See2faCodes`.
+#[must_use]
+pub fn pascal_case_key(display_name: &str) -> String {
+    display_name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect::<String>()
+            })
+        })
+        .collect()
+}
+
+/// A user's display label (profile name or email) for `user_id`, or the bare id when the user
+/// can't be loaded under `v`. `system` (history rows written by a System job) reads as "Gauge".
+pub async fn user_label(user_id: &str, v: &Valence) -> String {
+    let bare = canonical_user_id(user_id);
+    if bare == SYSTEM_ACTOR_ID {
+        return "Gauge".to_string();
+    }
+    match lepton::generated::User::get(&bare, v, valence::use_!(r"When **Gauge** shows **who did something or who holds access** (a request's requester, a change log row, a holder list), we **load that user** so the page shows their name instead of an id. People allowed to see that page see the name; nothing else uses it.")).await {
+        Ok(Some(user)) => crate::search_sources::user_principal_label(&user, &bare, v).await,
+        Ok(None) | Err(_) => bare,
     }
 }
 
@@ -523,14 +554,35 @@ pub async fn require_actor_controls_owner_group(group_id: &str, v: &Valence) -> 
     Ok(())
 }
 
+/// The owner group a permission create makes when the caller names none: `Owners of
+/// {display_name}`, owned by and containing the caller. One per permission, so each
+/// permission's owners can change without touching another's. An existing group with the same
+/// id is reused only when the caller already owns it; anyone else's group is never handed over.
 pub async fn resolve_or_create_default_owner_group(
     user_id: &str,
+    display_name: &str,
+    key: &str,
     system: &Valence,
 ) -> anyhow::Result<PermissionGroup> {
-    let normalized_user_id = canonical_user_id(user_id);
-    let group_id = format!("owner_group_{normalized_user_id}");
+    let key_fragment: String = key
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    // Keys that differ only in case or punctuation share a fragment, and a group outlives the
+    // permission it was made for. Reuse the group only when the caller already owns it (a retry
+    // of their own create); otherwise give this permission a fresh group of its own.
+    let mut group_id = format!("owners_of_{key_fragment}");
     if let Some(existing) = get_group_raw(&group_id, system).await? {
-        return Ok(existing);
+        if group_has_owner_user(&existing, &user_id_candidates(user_id), system).await? {
+            return Ok(existing);
+        }
+        group_id = format!("{group_id}_{}", uuid::Uuid::new_v4().simple());
     }
 
     let now = Utc::now();
@@ -538,8 +590,10 @@ pub async fn resolve_or_create_default_owner_group(
         None,
         None,
         None,
-        format!("{user_id} Owners"),
-        Some("Default owner group for permission creation".to_string()),
+        format!("Owners of {display_name}"),
+        Some(format!(
+            "People who manage the **{display_name}** permission."
+        )),
         now,
         now,
     )?;
@@ -753,4 +807,24 @@ pub async fn domain_has_owner_user(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pascal_case_key;
+
+    #[test]
+    fn pascal_case_key_joins_words_happy() {
+        assert_eq!(
+            pascal_case_key("Approve payroll runs"),
+            "ApprovePayrollRuns"
+        );
+        assert_eq!(pascal_case_key("  see 2fa-codes! "), "See2faCodes");
+        assert_eq!(pascal_case_key("Already Pascal"), "AlreadyPascal");
+    }
+
+    #[test]
+    fn pascal_case_key_of_symbols_is_empty_sad() {
+        assert_eq!(pascal_case_key(" -- "), "");
+    }
 }

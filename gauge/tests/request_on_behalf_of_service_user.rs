@@ -305,15 +305,9 @@ async fn duplicate_guard_is_scoped_to_target_and_bot_happy() {
         .await
         .expect("alice's own request is a different principal");
 
-    svc::decide_permission_request(
-        PermissionRequestDecisionInput {
-            request_id: first.id,
-            decision: PermissionRequestDecision::Deny,
-        },
-        &w.as_user("bob"),
-    )
-    .await
-    .expect("deny");
+    svc::deny_request(&first.id, "Not this quarter", &w.as_user("bob"))
+        .await
+        .expect("deny");
     svc::create_permission_request(group_request(TEAM, Some(bot_a.as_str())), &alice)
         .await
         .expect("a denied request doesn't block a new one");

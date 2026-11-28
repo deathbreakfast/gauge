@@ -215,6 +215,7 @@ async fn permission_writes(v: &Valence, read_id: &str) -> Vec<&'static str> {
         "create_permission",
         svc::create_permission(
             PermissionCreateInput {
+                display_name: String::new(),
                 name: "escalate".into(),
                 description: String::new(),
                 owners_group_id: READERS.into(),
