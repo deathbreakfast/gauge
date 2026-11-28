@@ -8,7 +8,7 @@ valence_schema! {
     Permission {
         repository: "https://github.com/unified-field-dev/gauge",
         table: "permission",
-        version: "0.1.2",
+        version: "0.1.3",
         database: crate::embedded_surreal::DEFAULT_STORAGE,
         description: "Permission object defining allow-list principals and owners group",
 
